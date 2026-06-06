@@ -26,8 +26,12 @@ const state = {
   selectedComp: null,
   profile: null,
   report: null,
+  chains: null,
+  proteinAtomCount: null,
   chemical: null,
   dockPose: null,
+  dockData: null,
+  screen: null,
   methods: null,
   pockets: [],
   dockSite: null,
@@ -73,6 +77,7 @@ function switchTab(name) {
       state.viewer.render();
     }, 30);
   }
+  if (name === "report") compileReport();
 }
 
 async function getJSON(url) {
@@ -113,9 +118,13 @@ async function loadStructure(pdbId) {
     state.pdbData = data.pdb_data;
     state.meta = data.metadata;
     state.components = data.components;
+    state.chains = data.chains;
+    state.proteinAtomCount = data.protein_atom_count;
     state.selectedComp = null;
     state.profile = null;
     state.report = null;
+    state.dockData = null;
+    state.screen = null;
     state.dockPose = null;
     state.methods = null;
     state.pockets = [];
@@ -358,7 +367,7 @@ async function selectComponent(index) {
     updateDockPocket();
 
     renderInteractions(data.profile);
-    renderReport(data.report, data.profile);
+    compileReport();
     rebuildScene();
     if (state.viewer) {
       state.viewer.zoomTo({ chain: comp.chain, resi: comp.res_seq });
@@ -456,9 +465,10 @@ async function runDock() {
       `/api/dock?pdb=${state.pdbId}&chem=${encodeURIComponent(chem)}&${siteParam}`
     );
     state.dockPose = { pdb: data.pose_pdb, profile: data.profile, report: data.report };
+    state.dockData = data;
     state.methods = data.methods;
     renderDocking(data);
-    renderReport(data.report, data.profile);
+    compileReport();
     rebuildScene(false);
     if (state.viewer) {
       state.viewer.zoomTo({ model: 1 });
@@ -544,15 +554,202 @@ function renderDocking(data) {
     ${methodsHTML(data.methods)}`;
 }
 
-function renderReport(report, profile) {
+// ================= comprehensive session report =================
+// Build the report once as structured sections; render both HTML and text from
+// the same data so the on-screen report and the .txt export always match.
+function buildReportSections() {
+  const s = [];
+  const m = state.meta || {};
+  const pct = (x) => (x == null ? "—" : Math.round(x * 100) + "%");
+
+  // --- Overview ---
+  if (state.pdbId) {
+    s.push({
+      title: "Structure overview",
+      rows: [
+        ["PDB", `${m.pdb_id || state.pdbId}${m.title ? " — " + m.title : ""}`],
+        ["Method", [m.experimental_method, m.resolution_A ? m.resolution_A + " Å" : null].filter(Boolean).join(", ") || "—"],
+        ["Released", m.deposited ? m.deposited.slice(0, 10) : "—"],
+        ["Chains", state.chains ? state.chains.join(", ") : "—"],
+        ["Protein atoms", state.proteinAtomCount ?? "—"],
+        ["Bound components", (state.components || []).length],
+      ],
+      list: (state.components || []).map((c) => `${c.res_name} (${c.kind}, ${c.chain}/${c.res_seq})`),
+    });
+  }
+
+  // --- Bound-ligand interaction analysis ---
+  if (state.selectedComp && state.profile) {
+    const p = state.profile;
+    s.push({
+      title: `Interaction analysis — ${p.component.label}`,
+      rows: Object.entries(p.counts).map(([k, v]) => [TYPE_LABEL[k] || k, v]),
+      lines: [
+        `Contacts: ${p.interaction_total} across ${p.contact_residue_count} residues`,
+        "Binding-site residues: " + (p.contact_residues || []).slice(0, 10).map((r) => r.res_name + r.res_seq).join(", "),
+      ],
+      hypotheses: state.report ? state.report.hypotheses : [],
+    });
+  }
+
+  // --- Pockets ---
+  if ((state.pockets || []).length) {
+    const evoMap = {};
+    if (state.evolution && state.evolution.pocket_conservation)
+      state.evolution.pocket_conservation.forEach((pc) => (evoMap[pc.index] = pc));
+    s.push({
+      title: `Detected pockets (${state.pockets.length})`,
+      table: {
+        head: ["#", "Tier", "Volume Å³", "Druggability", "Enclosure", "Conservation", "Assessment"],
+        rows: state.pockets.map((p) => {
+          const e = evoMap[p.index] || {};
+          return [
+            "#" + (p.index + 1), p.tier, p.volume_A3, p.score, p.enclosure + "/7",
+            e.mean_conservation == null ? "—" : e.mean_conservation,
+            e.label || "—",
+          ];
+        }),
+      },
+    });
+  }
+
+  // --- Evolution ---
+  if (state.evolution && state.evolution.available !== false) {
+    const e = state.evolution;
+    const rows = [
+      ["Pfam family", `${e.pfam} — ${e.family_name || ""}`],
+      ["Homologs", e.n_sequences],
+      ["Coverage", `${e.mapped_residues}/${e.target_length} (${pct(e.coverage)})`],
+      ["Consensus identity", pct(e.consensus_identity)],
+      ["Coevolution confidence", `${pct(e.coupling_confidence)} (${e.coupling_reliable ? "reliable" : "suppressed — too weak"})`],
+    ];
+    const lines = [
+      "Most conserved: " + (e.top_conserved || []).slice(0, 8).map((r) => `${r.res}(${r.conservation})`).join(", "),
+    ];
+    if (e.coupling_reliable && e.coupling_pairs.length)
+      lines.push("Top co-evolving pairs: " + e.coupling_pairs.slice(0, 6).map((p) => `${p.res_i}–${p.res_j}(${p.distance_A}Å)`).join(", "));
+    if ((e.divergent_residues || []).length)
+      lines.push("Derived (vs consensus): " + e.divergent_residues.slice(0, 8).map((r) => `${r.res} ${r.from}→${r.to}`).join(", "));
+    s.push({ title: "Evolutionary analysis", rows, lines });
+  }
+
+  // --- Docking ---
+  if (state.dockData) {
+    const d = state.dockData;
+    const rows = [
+      ["Chemical", `${d.chemical.name} (CID ${d.chemical.cid}, ${d.chemical.formula || ""})`],
+      ["Site", d.pocket.label],
+      ["Docking score", `${d.docking.score} (per-atom ${d.docking.ligand_efficiency})`],
+      ["Predicted interactions", `${d.profile.interaction_total} across ${d.profile.contact_residue_count} residues`],
+    ];
+    if (d.docking.redock_rmsd != null) rows.push(["Redock RMSD", `${d.docking.redock_rmsd} Å vs crystal ligand`]);
+    s.push({
+      title: "Docking",
+      rows,
+      hypotheses: d.report ? d.report.hypotheses : [],
+      pharmacology: d.pharmacology,
+    });
+  }
+
+  // --- Chemical lookup ---
+  if (state.chemical) {
+    const d = state.chemical;
+    const dl = d.druglikeness || {};
+    const r = d.rules || {};
+    const ab = r.absorption || {};
+    const passmark = (x) => (!x || x.pass == null ? "—" : x.pass ? "pass" : "fail");
+    s.push({
+      title: `Chemical — ${d.iupac_name || d.query}`,
+      rows: [
+        ["CID / formula", `${d.cid} · ${d.molecular_formula || ""}`],
+        ["MW / XLogP / TPSA", `${d.molecular_weight || "—"} · ${d.xlogp ?? "—"} · ${d.tpsa ?? "—"}`],
+        ["Lipinski", dl.drug_like ? "drug-like" : `${dl.violation_count} violation(s)`],
+        ["Veber / Egan / Lead", `${passmark(r.veber)} / ${passmark(r.egan)} / ${passmark(r.lead_like)}`],
+        ["GI absorption / BBB", `${ab.gi_absorption || "—"} / ${ab.bbb_permeant || "—"}`],
+      ],
+      pharmacology: d.pharmacology,
+    });
+  }
+
+  // --- Screening ---
+  if (state.screen && (state.screen.results || []).length) {
+    const ok = state.screen.results.filter((r) => !r.error);
+    s.push({
+      title: `Virtual screen — ${state.screen.site}`,
+      table: {
+        head: ["Rank", "Chemical", "Score", "Per-atom", "H-bonds", "Salt", "Contacts"],
+        rows: ok.map((r) => ["#" + r.rank, r.query, r.score, r.ligand_efficiency, r.counts.hydrogen_bond, r.counts.salt_bridge, r.contact_residue_count]),
+      },
+    });
+  }
+
+  return s;
+}
+
+// Cross-module synthesis: observations that combine findings.
+function synthesizeFindings() {
+  const out = [];
+  const e = state.evolution;
+  const pk = state.pockets || [];
+
+  if (pk.length && e && e.pocket_conservation) {
+    const cons = e.pocket_conservation.filter((p) => /conserved \(likely functional\)/.test(p.label));
+    const allo = e.pocket_conservation.filter((p) => /allosteric/.test(p.label));
+    const spec = e.pocket_conservation.filter((p) => p.specificity_candidate);
+    if (cons.length) out.push(`Pocket(s) ${cons.map((p) => "#" + (p.index + 1)).join(", ")} are evolutionarily conserved → likely functional/orthosteric site(s).`);
+    if (allo.length) out.push(`Pocket(s) ${allo.map((p) => "#" + (p.index + 1)).join(", ")} are coupling-enriched but not conserved → candidate allosteric/cryptic control site(s).`);
+    if (spec.length) out.push(`Pocket(s) ${spec.map((p) => "#" + (p.index + 1)).join(", ")} are lined by residues this protein diverged from the family consensus → possible lineage-specific binding specialization.`);
+  }
+  if (state.dockData) {
+    const d = state.dockData;
+    const ph = d.pharmacology;
+    if (ph && ph.match && (ph.match.level === "uniprot" || ph.match.level === "name")) {
+      const act = ph.match.best_activity ? ` (measured ${ph.match.best_activity.type} ${ph.match.best_activity.relation} ${ph.match.best_activity.value_nM} nM)` : "";
+      out.push(`Docked ${d.chemical.name} is a KNOWN modulator of this target${act} — the predicted pose is consistent with experimental pharmacology.`);
+    } else if (ph) {
+      out.push(`Docked ${d.chemical.name} has ChEMBL pharmacology but no measured activity against this exact target — treat the predicted pose as a novel hypothesis.`);
+    }
+    if (d.docking.redock_rmsd != null && d.docking.redock_rmsd <= 2.5)
+      out.push(`Redock RMSD ${d.docking.redock_rmsd} Å indicates the docking protocol reproduces the crystallographic pose for this system.`);
+  }
+  if (!out.length) out.push("Run more modules (pockets + evolution + docking) to generate cross-analysis synthesis.");
+  return out;
+}
+
+function compileReport() {
   const c = $("#reportContent");
+  if (!state.pdbId) {
+    c.className = "empty";
+    c.textContent = "Load a structure and run some analyses, then compile a report.";
+    return;
+  }
+  const sections = buildReportSections();
+  const synth = synthesizeFindings();
+
+  const rowsHTML = (rows) =>
+    `<table class="methods-table">${rows.map(([k, v]) => `<tr><td class="mk">${k}</td><td>${v}</td></tr>`).join("")}</table>`;
+  const tableHTML = (t) =>
+    `<table class="data"><thead><tr>${t.head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${t.rows.map((r) => `<tr>${r.map((x) => `<td>${x}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+
+  let html = `<div class="report-summary">Comprehensive analysis report for <b>${state.meta.pdb_id || state.pdbId}</b>${state.meta.title ? " — " + state.meta.title : ""}. Generated by AtomScope from the analyses run this session.</div>`;
+  html += `<div class="section-h">Integrated synthesis</div><ul class="hyp-list">${synth.map((x) => `<li>${x}</li>`).join("")}</ul>`;
+
+  sections.forEach((sec) => {
+    html += `<div class="section-h">${sec.title}</div>`;
+    if (sec.rows) html += rowsHTML(sec.rows);
+    if (sec.list && sec.list.length) html += `<div class="hint">${sec.list.join(" · ")}</div>`;
+    if (sec.lines) html += sec.lines.map((l) => `<div class="hint" style="margin-top:4px">${l}</div>`).join("");
+    if (sec.table) html += tableHTML(sec.table);
+    if (sec.pharmacology) html += pharmacologyHTML(sec.pharmacology);
+    if (sec.hypotheses && sec.hypotheses.length)
+      html += `<ul class="hyp-list" style="margin-top:8px">${sec.hypotheses.map((h) => `<li>${h}</li>`).join("")}</ul>`;
+  });
+
+  if (state.methods) html += methodsHTML(state.methods);
+  html += `<div class="disclaimer">Research-only. AtomScope interactions, docking, pockets, and coevolution are geometric/empirical/statistical heuristics from a single static structure and family alignment — not affinities, structures, or clinical guidance. Validate with orthogonal evidence.</div>`;
+
   c.className = "";
-  c.innerHTML = `
-    <div class="report-summary">${report.summary}</div>
-    <div class="section-h">Research hypotheses</div>
-    <ul class="hyp-list">${report.hypotheses.map((h) => `<li>${h}</li>`).join("")}</ul>
-    <div class="disclaimer">${report.disclaimer}</div>`;
-  $("#exportBtn").hidden = false;
+  c.innerHTML = html;
 }
 
 // ================= batch virtual screen =================
@@ -583,6 +780,7 @@ async function runScreen() {
     const data = await getJSON(
       `/api/screen?pdb=${state.pdbId}&chems=${encodeURIComponent(raw)}&${siteParam}`
     );
+    state.screen = data;
     renderScreen(data);
     const ok = data.results.filter((r) => !r.error).length;
     setStatus(`Screened ${data.results.length} chemical(s) into ${data.site}; ${ok} docked and ranked by fit.`);
@@ -1075,61 +1273,65 @@ async function searchPDB(q) {
 
 // ================= export =================
 function exportReport() {
-  if (!state.report || !state.profile) return;
+  if (!state.pdbId) return;
   const m = state.meta || {};
-  const p = state.profile;
-  const lines = [];
-  lines.push("AtomScope — Interaction Report (research-only)");
-  lines.push("=".repeat(50));
-  lines.push(`PDB: ${m.pdb_id}  ${m.title || ""}`);
-  lines.push(`Method: ${m.experimental_method || "—"}  Resolution: ${m.resolution_A || "—"} A`);
-  lines.push(`Component: ${p.component.label} (${p.component.kind})`);
-  lines.push("");
-  lines.push("SUMMARY");
-  lines.push(state.report.summary);
-  lines.push("");
-  lines.push("INTERACTION COUNTS");
-  Object.entries(p.counts).forEach(([k, v]) => lines.push(`  ${k}: ${v}`));
-  lines.push("");
-  lines.push("ATOMIC CONTACTS");
-  p.interactions.forEach((it) =>
-    lines.push(
-      `  ${TYPE_LABEL[it.type]}: ${it.ligand_atom.name} -- ` +
-        `${it.protein_atom.res_name}${it.protein_atom.res_seq}/${it.protein_atom.name} ` +
-        `(${it.distance} A)`
-    )
-  );
-  lines.push("");
-  lines.push("HYPOTHESES");
-  state.report.hypotheses.forEach((h, i) => lines.push(`  ${i + 1}. ${h}`));
-  lines.push("");
+  const L = [];
+  const rule = (ch) => ch.repeat(60);
+  L.push("AtomScope — Comprehensive Analysis Report (research-only)");
+  L.push(rule("="));
+  L.push(`PDB: ${m.pdb_id || state.pdbId}  ${m.title || ""}`);
+  L.push(`Generated: ${new Date().toISOString().slice(0, 19).replace("T", " ")} (local)`);
+  L.push("");
 
-  // Methods & reproducibility (present when the report came from a docking run).
+  L.push("INTEGRATED SYNTHESIS");
+  synthesizeFindings().forEach((x, i) => L.push(`  ${i + 1}. ${x}`));
+  L.push("");
+
+  buildReportSections().forEach((sec) => {
+    L.push(sec.title.toUpperCase());
+    L.push(rule("-"));
+    (sec.rows || []).forEach(([k, v]) => L.push(`  ${k}: ${v}`));
+    (sec.list || []).forEach((x) => L.push(`  - ${x}`));
+    (sec.lines || []).forEach((x) => L.push(`  ${x}`));
+    if (sec.table) {
+      L.push("  " + sec.table.head.join(" | "));
+      sec.table.rows.forEach((r) => L.push("  " + r.join(" | ")));
+    }
+    if (sec.pharmacology) {
+      const ph = sec.pharmacology;
+      L.push(`  ChEMBL: ${ph.pref_name || ph.chembl_id} — ${ph.development_status}`);
+      if (ph.match && ph.match.level !== "none")
+        L.push(`  Target match (${ph.match.level}): ${ph.match.target_name}` + (ph.match.best_activity ? ` — best ${ph.match.best_activity.type} ${ph.match.best_activity.relation} ${ph.match.best_activity.value_nM} nM` : ""));
+      (ph.mechanisms || []).forEach((mm) =>
+        L.push(`  MoA: ${mm.moa} | ${mm.target_name}` + (mm.best_activity ? ` (${mm.best_activity.type} ${mm.best_activity.value_nM} nM)` : ""))
+      );
+    }
+    (sec.hypotheses || []).forEach((h, i) => L.push(`  Hypothesis ${i + 1}: ${h}`));
+    L.push("");
+  });
+
   const mm = state.methods;
   if (mm) {
-    lines.push("METHODS & REPRODUCIBILITY");
-    lines.push(`  Tool: ${mm.tool}`);
-    lines.push(`  Run: ${mm.run_utc}`);
-    if (mm.receptor)
-      lines.push(`  Receptor: ${[mm.receptor.pdb_id, mm.receptor.title].filter(Boolean).join(" — ")}`);
-    lines.push(`  Receptor prep: ${mm.receptor_prep}`);
-    lines.push(`  Site: ${mm.site}`);
-    if (mm.box)
-      lines.push(`  Box: center [${(mm.box.center||[]).join(", ")}], ${mm.box.edge_A} A edge, ${mm.box.grid_spacing_A} A grid, +/-${mm.box.translation_search_A} A search`);
-    lines.push(`  Scoring: ${mm.scoring}`);
-    if (mm.search)
-      lines.push(`  Search: ${mm.search.algorithm}, ${mm.search.seeds} seeds x ${mm.search.mc_steps} steps, random seed ${mm.search.random_seed}`);
-    if (mm.ligand)
-      lines.push(`  Ligand: PubChem CID ${mm.ligand.cid}, ${mm.ligand.conformer} conformer, ${mm.ligand.n_heavy_atoms} heavy atoms, ${mm.ligand.flexibility}`);
-    lines.push("");
+    L.push("METHODS & REPRODUCIBILITY");
+    L.push(rule("-"));
+    L.push(`  Tool: ${mm.tool}   Run: ${mm.run_utc}`);
+    if (mm.receptor) L.push(`  Receptor: ${[mm.receptor.pdb_id, mm.receptor.title].filter(Boolean).join(" — ")}`);
+    L.push(`  Receptor prep: ${mm.receptor_prep}`);
+    L.push(`  Site: ${mm.site}`);
+    if (mm.box) L.push(`  Box: center [${(mm.box.center || []).join(", ")}], ${mm.box.edge_A} A edge, ${mm.box.grid_spacing_A} A grid, +/-${mm.box.translation_search_A} A search`);
+    L.push(`  Scoring: ${mm.scoring}`);
+    if (mm.search) L.push(`  Search: ${mm.search.algorithm}, ${mm.search.seeds} seeds x ${mm.search.mc_steps} steps, random seed ${mm.search.random_seed}`);
+    if (mm.ligand) L.push(`  Ligand: PubChem CID ${mm.ligand.cid}, ${mm.ligand.conformer} conformer, ${mm.ligand.n_heavy_atoms} heavy atoms, ${mm.ligand.flexibility}`);
+    L.push("");
   }
 
-  lines.push(state.report.disclaimer);
+  L.push(rule("="));
+  L.push("Research-only. Heuristic predictions from a single static structure + family alignment. Not affinities or clinical guidance; validate with orthogonal evidence.");
 
-  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const blob = new Blob([L.join("\n")], { type: "text/plain" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `atomscope_${m.pdb_id}_${p.component.res_name}.txt`;
+  a.download = `atomscope_${m.pdb_id || state.pdbId}_report.txt`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -1185,6 +1387,7 @@ function init() {
     }
   });
   $("#exportBtn").addEventListener("click", exportReport);
+  $("#compileBtn").addEventListener("click", compileReport);
 }
 
 document.addEventListener("DOMContentLoaded", init);

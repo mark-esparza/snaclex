@@ -136,8 +136,12 @@
       </section>
 
       <section class="panel" data-panel="report">
-        <div id="reportContent" class="empty">A research summary appears here after analysis.</div>
-        <button id="exportBtn" class="primary" hidden>Export report (.txt)</button>
+        <div class="pocket-controls">
+          <button id="compileBtn" class="primary">Compile full report</button>
+          <button id="exportBtn">Export (.txt)</button>
+          <span class="hint" style="margin:0">Aggregates every analysis run this session — overview, interactions, pockets, evolution, docking, pharmacology &amp; screening.</span>
+        </div>
+        <div id="reportContent" class="empty">Run some analyses (interactions, pockets, evolution, docking…), then compile a full report here.</div>
       </section>
     </main>
   </div>
