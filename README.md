@@ -110,7 +110,7 @@ variable is set (see `Procfile`).
 **Render (recommended, free tier):**
 1. Push this repo to GitHub.
 2. On [render.com](https://render.com) → *New* → *Web Service* → connect the repo.
-3. Settings: **Build Command** `` (leave blank) · **Start Command** `python server.py`.
+3. Settings: **Build Command** `pip install -r requirements.txt` · **Start Command** `python server.py`.
 4. Deploy. Render gives you a public `https://<name>.onrender.com` URL.
 
 **Railway / Fly.io / Heroku** work the same way via the included `Procfile`.

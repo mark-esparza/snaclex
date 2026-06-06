@@ -1,0 +1,3 @@
+# AtomScope has no third-party dependencies — it runs on the Python standard
+# library only. This file exists so PaaS build steps (e.g. Render) have a
+# valid, non-empty build command: `pip install -r requirements.txt`.
