@@ -276,9 +276,12 @@ def analyze(structure, uniprots: list[str]) -> dict | None:
         mapped += 1
         cons_by_key[(chain, res_seq)] = c
         col_to_residue[cj] = (chain, res_seq, res_name)
+        target_aa = AA3TO1.get(res_name, "X")
+        cons_aa = core_consensus[cj]
         residues.append(
             {"chain": chain, "res_seq": res_seq, "res_name": res_name,
-             "conservation": c, "consensus": core_consensus[cj]}
+             "conservation": c, "consensus": cons_aa, "target_aa": target_aa,
+             "divergent": target_aa != cons_aa}
         )
 
     ranked = sorted(
@@ -290,6 +293,24 @@ def analyze(structure, uniprots: list[str]) -> dict | None:
          "conservation": r["conservation"]}
         for r in ranked[:15]
     ]
+
+    # Ancestral-divergence (ASR-lite): where this protein departs from the
+    # conserved family consensus. A change at an otherwise-conserved column is a
+    # lineage-specific "derived" substitution — often specificity-determining.
+    mapped_cons = [r for r in residues if r["conservation"] is not None]
+    matches = sum(1 for r in mapped_cons if not r["divergent"])
+    consensus_identity = round(matches / len(mapped_cons), 3) if mapped_cons else 0.0
+    notable = [
+        r for r in mapped_cons if r["divergent"] and r["conservation"] >= 0.4
+    ]
+    notable.sort(key=lambda r: -r["conservation"])
+    divergent_residues = [
+        {"res": f"{r['res_name']}{r['res_seq']}", "chain": r["chain"],
+         "from": r["consensus"], "to": r["target_aa"],
+         "conservation": r["conservation"]}
+        for r in notable[:20]
+    ]
+    divergent_keys = {(r["chain"], r["res_seq"]) for r in notable}
 
     # Evolutionary coupling (APC-corrected mutual information) -> co-evolving
     # residue pairs and coupling hubs, mapped back onto the structure.
@@ -312,8 +333,11 @@ def analyze(structure, uniprots: list[str]) -> dict | None:
         "coupling_hubs": coupling_hubs,
         "coupling_confidence": coupling_conf,
         "coupling_reliable": coupling_conf >= COEVO_CONF_MIN and bool(coupling_pairs),
-        "_cons_by_key": cons_by_key,  # internal: for pocket scoring
-        "_hub_keys": hub_keys,        # internal: for pocket allosteric flag
+        "consensus_identity": consensus_identity,
+        "divergent_residues": divergent_residues,
+        "_cons_by_key": cons_by_key,      # internal: for pocket scoring
+        "_hub_keys": hub_keys,            # internal: for pocket allosteric flag
+        "_divergent_keys": divergent_keys,  # internal: for pocket divergence
     }
 
 
@@ -485,10 +509,12 @@ def annotate_pockets(evo: dict, pockets: list) -> list:
     """
     cons_by_key = evo.get("_cons_by_key", {})
     hub_keys = evo.get("_hub_keys", set())
+    divergent_keys = evo.get("_divergent_keys", set())
     out = []
     for p in pockets:
         vals = []
         hubs = 0
+        divergent = 0
         for r in p.get("lining_residues", []):
             key = (r["chain"], r["res_seq"])
             c = cons_by_key.get(key)
@@ -496,6 +522,8 @@ def annotate_pockets(evo: dict, pockets: list) -> list:
                 vals.append(c)
             if key in hub_keys:
                 hubs += 1
+            if key in divergent_keys:
+                divergent += 1
         if vals:
             mean = sum(vals) / len(vals)
             enriched = hubs >= 3 and len(vals) and hubs >= 0.25 * len(vals)
@@ -518,6 +546,8 @@ def annotate_pockets(evo: dict, pockets: list) -> list:
                 "mean_conservation": round(mean, 3) if mean is not None else None,
                 "conserved_residues": len(vals),
                 "coupling_hubs": hubs,
+                "divergent_lining": divergent,
+                "specificity_candidate": divergent >= 2 and len(vals) and divergent >= 0.2 * len(vals),
                 "label": label,
             }
         )

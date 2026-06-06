@@ -35,6 +35,7 @@ const state = {
   evolution: null,
   colorByConservation: false,
   showCoupling: false,
+  showDivergence: false,
   viewer: null,
   showSurface: false,
   showLines: true,
@@ -123,6 +124,7 @@ async function loadStructure(pdbId) {
     state.evolution = null;
     state.colorByConservation = false;
     state.showCoupling = false;
+    state.showDivergence = false;
     const evoCb = $("#toggleConservation");
     if (evoCb) evoCb.checked = false;
     $("#evolutionContent").className = "empty";
@@ -301,6 +303,18 @@ function rebuildScene(resetZoom) {
       const resi = parseInt(String(h.res).replace(/\D/g, ""), 10);
       if (!isNaN(resi))
         v.addStyle({ chain: h.chain, resi }, { stick: { radius: 0.2, color: "#000000" } });
+    });
+  }
+
+  // ancestral-divergence: highlight residues that differ from the family consensus
+  if (state.showDivergence && state.evolution && state.evolution.divergent_residues) {
+    state.evolution.divergent_residues.forEach((r) => {
+      const resi = parseInt(String(r.res).replace(/\D/g, ""), 10);
+      if (!isNaN(resi))
+        v.addStyle(
+          { chain: r.chain, resi },
+          { stick: { radius: 0.22, color: "#1a1a1a" }, sphere: { scale: 0.22, color: "#1a1a1a" } }
+        );
     });
   }
 
@@ -770,6 +784,7 @@ function renderEvolution(d) {
         <td>${p.tier || "—"}</td>
         <td>${p.volume_A3} Å³</td>
         <td>${p.mean_conservation == null ? "—" : p.mean_conservation}</td>
+        <td>${p.divergent_lining || 0}${p.specificity_candidate ? " ★" : ""}</td>
         <td>${p.label}</td>
       </tr>`
     )
@@ -785,11 +800,13 @@ function renderEvolution(d) {
     <div class="section-h">Most conserved residues</div>
     <div class="res-chips">${top}</div>
     ${coevolutionHTML(d)}
-    <div class="section-h">Pocket conservation</div>
+    ${divergenceHTML(d)}
+    <div class="section-h">Pocket conservation &amp; divergence</div>
     <table class="data">
-      <thead><tr><th>Pocket</th><th>Tier</th><th>Volume</th><th>Mean conservation</th><th>Assessment</th></tr></thead>
-      <tbody>${pk || `<tr><td colspan="5">No pockets.</td></tr>`}</tbody>
+      <thead><tr><th>Pocket</th><th>Tier</th><th>Volume</th><th>Mean conservation</th><th>Divergent lining</th><th>Assessment</th></tr></thead>
+      <tbody>${pk || `<tr><td colspan="6">No pockets.</td></tr>`}</tbody>
     </table>
+    <div class="hint">★ = specificity candidate: pocket lined by residues this protein has diverged from the conserved family consensus (possible lineage-specific binding specialization).</div>
     <div class="disclaimer">Conservation is a family-MSA signal (Shannon entropy across ${d.n_sequences} Pfam homologs, 0 = variable, 1 = invariant) — not phylogenetic ancestral reconstruction. Conserved pocket-lining residues suggest functional importance.</div>`;
   $("#evoColorBtn").addEventListener("click", () => {
     state.colorByConservation = true;
@@ -805,6 +822,34 @@ function renderEvolution(d) {
       rebuildScene(false);
       switchTab("viewer");
     });
+  const divBtn = $("#divBtn");
+  if (divBtn)
+    divBtn.addEventListener("click", () => {
+      state.showDivergence = true;
+      rebuildScene(false);
+      switchTab("viewer");
+    });
+}
+
+function divergenceHTML(d) {
+  const idPct = Math.round((d.consensus_identity || 0) * 100);
+  const rows = (d.divergent_residues || [])
+    .map(
+      (r) => `<tr>
+        <td>${r.res} <span style="color:var(--muted)">${r.chain}</span></td>
+        <td>${r.from} → ${r.to}</td>
+        <td>${r.conservation}</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    <div class="section-h">Ancestral divergence (family consensus)</div>
+    <div class="hint" style="margin-top:0">This protein is <b>${idPct}%</b> identical to its family consensus (an ancestral-like "average" sequence). The positions below are where it has <b>diverged at otherwise-conserved columns</b> — lineage-specific "derived" substitutions that often determine specialized function or specificity. This is an ASR-style proxy, not a phylogenetic ancestral reconstruction.</div>
+    ${rows ? `<button id="divBtn" class="primary" style="margin:12px 0">Highlight divergent residues in 3D →</button>` : ""}
+    <table class="data" style="margin-top:8px">
+      <thead><tr><th>Residue</th><th>Consensus → this protein</th><th>Conservation</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="3">No notable divergence at conserved positions.</td></tr>`}</tbody>
+    </table>`;
 }
 
 function coevolutionHTML(d) {
