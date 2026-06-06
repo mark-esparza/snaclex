@@ -24,25 +24,18 @@
     <aside class="rail">
       <section class="card">
         <h2>1 · Load a protein</h2>
-        <label class="field-label">PDB ID (RCSB)</label>
+        <label class="field-label">PDB ID or protein name</label>
         <div class="inline">
-          <input id="pdbInput" type="text" placeholder="e.g. 1HSG" maxlength="4" />
-          <button id="loadBtn" class="primary">Load</button>
+          <input id="pdbInput" type="text" placeholder="1HSG   ·or·   HIV protease" />
+          <button id="loadBtn" class="primary">Go</button>
         </div>
-        <div class="hint">Examples:
+        <div class="hint">Enter a 4-character <b>PDB ID</b> to load it, or a <b>name</b> to search RCSB. Examples:
           <a href="#" class="ex" data-pdb="1HSG">1HSG</a>·
           <a href="#" class="ex" data-pdb="1CA2">1CA2</a>·
           <a href="#" class="ex" data-pdb="3PTB">3PTB</a>·
           <a href="#" class="ex" data-pdb="6LU7">6LU7</a>
         </div>
-        <details class="search-block">
-          <summary>Search the PDB by name</summary>
-          <div class="inline">
-            <input id="searchInput" type="text" placeholder="e.g. HIV protease" />
-            <button id="searchBtn">Find</button>
-          </div>
-          <div id="searchResults" class="search-results"></div>
-        </details>
+        <div id="searchResults" class="search-results"></div>
       </section>
 
       <section class="card" id="componentCard" hidden>

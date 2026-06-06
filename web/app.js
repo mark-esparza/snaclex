@@ -72,6 +72,21 @@ async function getJSON(url) {
 }
 
 // ================= structure loading =================
+// One box for everything: a 4-char PDB ID loads directly; anything else
+// is treated as a name and searched against RCSB.
+function smartLoad(value) {
+  const v = (value || "").trim();
+  if (!v) {
+    setStatus("Enter a PDB ID (e.g. 1HSG) or a protein name (e.g. insulin).", "error");
+    return;
+  }
+  if (/^[0-9A-Za-z]{4}$/.test(v)) {
+    loadStructure(v);
+  } else {
+    searchPDB(v);
+  }
+}
+
 async function loadStructure(pdbId) {
   pdbId = (pdbId || "").trim().toUpperCase();
   if (!/^[0-9A-Z]{4}$/.test(pdbId)) {
@@ -80,6 +95,7 @@ async function loadStructure(pdbId) {
   }
   setStatus(`Fetching ${pdbId} from RCSB and parsing atoms…`, "busy");
   $("#loadBtn").disabled = true;
+  $("#searchResults").innerHTML = "";
   try {
     const data = await getJSON(`/api/analyze?pdb=${pdbId}`);
     state.pdbId = pdbId;
@@ -751,9 +767,9 @@ function exportReport() {
 
 // ================= wiring =================
 function init() {
-  $("#loadBtn").addEventListener("click", () => loadStructure($("#pdbInput").value));
+  $("#loadBtn").addEventListener("click", () => smartLoad($("#pdbInput").value));
   $("#pdbInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") loadStructure($("#pdbInput").value);
+    if (e.key === "Enter") smartLoad($("#pdbInput").value);
   });
   document.querySelectorAll("a.ex").forEach((a) =>
     a.addEventListener("click", (e) => {
@@ -762,10 +778,6 @@ function init() {
       loadStructure(a.dataset.pdb);
     })
   );
-  $("#searchBtn").addEventListener("click", () => searchPDB($("#searchInput").value));
-  $("#searchInput").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") searchPDB($("#searchInput").value);
-  });
   $("#chemBtn").addEventListener("click", () => lookupChemical($("#chemInput").value));
   $("#chemInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") lookupChemical($("#chemInput").value);
