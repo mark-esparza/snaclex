@@ -1,0 +1,35 @@
+AtomScope — Third-Party Notices
+Copyright (c) 2026 Mark Esparza. All rights reserved.
+
+AtomScope is proprietary (see LICENSE). It interoperates with the following
+third-party software and public data resources, each governed by its own
+license/terms. AtomScope accesses the data resources at runtime via their
+public APIs; it does not bundle or redistribute their databases.
+
+SOFTWARE (client-side, loaded at runtime)
+- 3Dmol.js — molecular visualization library. BSD-3-Clause License.
+  Loaded in the browser from a CDN. (c) the 3Dmol.js authors.
+
+DATA RESOURCES (accessed at runtime via public APIs)
+- RCSB Protein Data Bank (rcsb.org) — structures & metadata.
+  Open access; PDB data are in the public domain. Please cite RCSB PDB.
+- PubChem (NCBI) — compound data & 3D conformers.
+  U.S. Government work; data generally free of copyright restrictions.
+- ChEMBL (EMBL-EBI) — bioactivity, mechanism, and drug data.
+  ChEMBL data are released under CC BY-SA 3.0. Attribution to ChEMBL/EMBL-EBI
+  is required when ChEMBL-derived data are displayed or redistributed.
+- InterPro / Pfam (EMBL-EBI) — protein family alignments.
+  Subject to EMBL-EBI terms of use; please cite InterPro/Pfam.
+
+NOTES
+- The scientific methods AtomScope re-implements (e.g., LIGSITE pocket
+  detection, AutoDock-style grid scoring, mutual-information coevolution,
+  Lipinski/Veber/Egan/BOILED-Egg filters, Shannon-entropy conservation) are
+  published academic methods and are credited to their original authors. The
+  proprietary license covers AtomScope's own source code and expression, not
+  these underlying public methods.
+- Users who redistribute data obtained through AtomScope (especially ChEMBL
+  data under CC BY-SA) are responsible for complying with the relevant terms.
+
+This file is informational and does not constitute legal advice. Confirm
+third-party compliance with qualified counsel before any commercial use.

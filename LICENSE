@@ -1,0 +1,44 @@
+AtomScope — Proprietary Software License
+Copyright (c) 2026 Mark Esparza. All rights reserved.
+
+This source code, documentation, and all associated materials (collectively,
+the "Software") are the proprietary and confidential property of the copyright
+holder.
+
+NO LICENSE OR RIGHT IS GRANTED. No person or entity is granted any license,
+right, or permission to use, copy, reproduce, modify, adapt, translate, merge,
+publish, distribute, sublicense, sell, rent, lease, host as a service, or
+create derivative works of the Software, in whole or in part, by any means or
+in any form, without the prior express written permission of the copyright
+holder.
+
+The Software is made publicly viewable (for example, on a public source-code
+repository) solely for reference, evaluation, and demonstration purposes.
+Making the Software viewable does not grant any license to it. Any access to or
+viewing of the Software does not transfer any ownership or usage rights.
+Unauthorized use, reproduction, or distribution of the Software is prohibited
+and may violate copyright, trademark, and other applicable laws.
+
+All trademarks, service marks, trade names, and logos used in connection with
+the Software (including the name "AtomScope") are the property of the copyright
+holder and may not be used without prior written permission.
+
+THIRD-PARTY COMPONENTS. The Software interoperates with and/or includes
+third-party software and data that are subject to their own licenses and terms.
+Those components remain governed by their respective licenses; see the NOTICE
+file. Nothing in this license alters the terms applicable to such third-party
+components.
+
+RESEARCH USE ONLY. The Software is provided for research and informational
+purposes only. It is not a medical device and must not be used for clinical,
+diagnostic, therapeutic, or other decision-making affecting human health.
+
+NO WARRANTY. THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT
+WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.
+
+To request permissions or a license, contact the copyright holder.

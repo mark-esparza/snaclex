@@ -12,6 +12,11 @@ chemical against **PubChem** and **ChEMBL**.
 > Research-only. Interactions are geometric heuristics computed from experimental
 > coordinates (no explicit hydrogens, no energy minimization). Not for clinical use.
 
+> **Copyright © 2026 Mark Esparza. All rights reserved.** AtomScope is proprietary
+> software — see [LICENSE](LICENSE). No license to use, copy, modify, or
+> distribute is granted; the source is public for reference only. Third-party
+> components and data sources retain their own terms — see [NOTICE](NOTICE).
+
 ## What it does
 
 1. **Load a protein** by PDB ID (or full-text search the PDB).
