@@ -272,6 +272,17 @@ textarea:focus { border-color: var(--ink); }
 .smiles { font-family: monospace; font-size: 12px; color: var(--muted); word-break: break-all; }
 a.ext { color: var(--ink); }
 
+/* ---------- druglikeness rules + pharmacology ---------- */
+.rule-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.rule-chip { font-size: 12px; padding: 5px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--soft); }
+.rule-chip.pass { border-color: #2c5a3a; }
+.rule-chip.fail { border-color: #8a3b3b; color: var(--muted); }
+.rule-chip b { color: var(--ink); }
+.pharm-match { padding: 10px 12px; border-radius: var(--radius); font-size: 13px; margin: 4px 0 4px; border: 1px solid var(--line-strong); }
+.pharm-match.hit { background: #eef6ef; border-color: #2c5a3a; }
+.pharm-match.miss { background: var(--soft); color: var(--muted); }
+.pharm-match .conf { color: var(--muted); font-size: 11px; }
+
 /* ---------- report ---------- */
 .report-summary { font-size: 15px; line-height: 1.7; background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
 .hyp-list { margin: 14px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }

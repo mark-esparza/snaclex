@@ -80,6 +80,7 @@ def lookup_compound(identifier: str) -> dict:
         ),
     }
     result["druglikeness"] = _lipinski(result)
+    result["rules"] = _extended_rules(result)
     return result
 
 
@@ -136,6 +137,46 @@ def _to_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _extended_rules(p: dict) -> dict:
+    """Druglikeness rules beyond Lipinski, computed from PubChem descriptors.
+
+    Veber (oral bioavailability), Egan (absorption), lead-likeness, and a
+    BOILED-Egg-style absorption/BBB read (XLogP used as a WLOGP proxy). All are
+    transparent rule-of-thumb filters, not trained models.
+    """
+    mw = p.get("molecular_weight")
+    logp = p.get("xlogp")
+    tpsa = p.get("tpsa")
+    rot = p.get("rotatable_bonds")
+
+    def rule(passed, criteria):
+        return {"pass": (None if passed is None else bool(passed)), "criteria": criteria}
+
+    veber = None if (rot is None or tpsa is None) else (rot <= 10 and tpsa <= 140)
+    egan = None if (tpsa is None or logp is None) else (tpsa <= 131.6 and logp <= 5.88)
+    lead = (
+        None
+        if (mw is None or logp is None or rot is None)
+        else (mw <= 350 and logp <= 3.5 and rot <= 7)
+    )
+
+    gi = bbb = None
+    if tpsa is not None and logp is not None:
+        gi = "High" if (tpsa <= 130 and -0.5 <= logp <= 6.0) else "Low"
+        bbb = "Yes" if (tpsa <= 79 and 0.4 <= logp <= 6.0) else "No"
+
+    return {
+        "veber": rule(veber, "rotatable ≤10 and TPSA ≤140"),
+        "egan": rule(egan, "TPSA ≤131.6 and XLogP ≤5.88"),
+        "lead_like": rule(lead, "MW ≤350, XLogP ≤3.5, rotatable ≤7"),
+        "absorption": {
+            "gi_absorption": gi,
+            "bbb_permeant": bbb,
+            "model": "BOILED-Egg style (approx; XLogP as WLogP proxy)",
+        },
+    }
 
 
 def _lipinski(props: dict) -> dict:

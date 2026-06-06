@@ -492,6 +492,7 @@ function renderDocking(data) {
       into <b>${data.pocket.label}</b>${srcNote}. Black sticks in the 3D viewer show the predicted pose.${rmsdNote}
     </div>
     ${interactionsHTML(data.profile)}
+    ${pharmacologyHTML(data.pharmacology)}
     ${methodsHTML(data.methods)}`;
 }
 
@@ -691,10 +692,14 @@ function dockIntoPocket(index) {
 async function lookupChemical(q) {
   q = (q || "").trim();
   if (!q) return;
-  setStatus(`Looking up "${q}" in PubChem…`, "busy");
+  const ctx = state.pdbId
+    ? ` and cross-referencing ChEMBL vs ${state.pdbId}…`
+    : "…";
+  setStatus(`Looking up "${q}" in PubChem${ctx}`, "busy");
   switchTab("chemical");
   try {
-    const data = await getJSON(`/api/chemical?q=${encodeURIComponent(q)}`);
+    const pdbParam = state.pdbId ? `&pdb=${state.pdbId}` : "";
+    const data = await getJSON(`/api/chemical?q=${encodeURIComponent(q)}${pdbParam}`);
     state.chemical = data;
     if (!$("#dockChemInput").value.trim()) $("#dockChemInput").value = q;
     renderChemical(data);
@@ -744,18 +749,81 @@ function renderChemical(d) {
         ${chembl}
       </div>
     </div>
+    ${pharmacologyHTML(d.pharmacology)}
+    <div class="section-h">Druglikeness rules</div>
+    ${rulesHTML(d.rules)}
     <div class="section-h">Physicochemical properties</div>
     <div class="meta-grid">
-      ${prop("Molecular weight", d.molecular_weight ? d.molecular_weight + " g/mol" : "—")}
-      ${prop("XLogP", d.xlogp)}
-      ${prop("TPSA", d.tpsa ? d.tpsa + " Å²" : "—")}
-      ${prop("H-bond donors", d.h_bond_donors)}
-      ${prop("H-bond acceptors", d.h_bond_acceptors)}
-      ${prop("Rotatable bonds", d.rotatable_bonds)}
-      ${prop("Formal charge", d.formal_charge)}
+      ${propCell("Molecular weight", d.molecular_weight ? d.molecular_weight + " g/mol" : "—")}
+      ${propCell("XLogP", d.xlogp)}
+      ${propCell("TPSA", d.tpsa ? d.tpsa + " Å²" : "—")}
+      ${propCell("H-bond donors", d.h_bond_donors)}
+      ${propCell("H-bond acceptors", d.h_bond_acceptors)}
+      ${propCell("Rotatable bonds", d.rotatable_bonds)}
+      ${propCell("Formal charge", d.formal_charge)}
     </div>
     <div class="section-h">SMILES</div>
     <div class="smiles">${d.smiles || "—"}</div>`;
+}
+
+function propCell(k, v) {
+  return `<div class="meta-cell"><div class="k">${k}</div><div class="v">${v ?? "—"}</div></div>`;
+}
+
+// Druglikeness rule chips (Veber / Egan / lead-like + BOILED-Egg absorption).
+function rulesHTML(rules) {
+  if (!rules) return `<div class="hint">—</div>`;
+  const mark = (r) =>
+    !r || r.pass === null ? "—" : r.pass ? "✓" : "✗";
+  const cls = (r) => (!r || r.pass === null ? "" : r.pass ? "pass" : "fail");
+  const ab = rules.absorption || {};
+  return `<div class="rule-row">
+    <span class="rule-chip ${cls(rules.veber)}" title="${rules.veber ? rules.veber.criteria : ""}">Veber ${mark(rules.veber)}</span>
+    <span class="rule-chip ${cls(rules.egan)}" title="${rules.egan ? rules.egan.criteria : ""}">Egan ${mark(rules.egan)}</span>
+    <span class="rule-chip ${cls(rules.lead_like)}" title="${rules.lead_like ? rules.lead_like.criteria : ""}">Lead-like ${mark(rules.lead_like)}</span>
+    <span class="rule-chip" title="${ab.model || ""}">GI absorption: <b>${ab.gi_absorption || "—"}</b></span>
+    <span class="rule-chip" title="${ab.model || ""}">BBB: <b>${ab.bbb_permeant || "—"}</b></span>
+  </div>`;
+}
+
+// Curated ChEMBL pharmacology + measured activity vs the loaded protein.
+function pharmacologyHTML(ph) {
+  if (!ph) return "";
+  const m = ph.match || {};
+  const fmtAct = (a) =>
+    a ? `${a.type} ${a.relation} ${a.value_nM} nM` : null;
+  let banner = "";
+  if (m.level === "uniprot" || m.level === "name") {
+    const conf = m.level === "uniprot" ? "confirmed (UniProt)" : "likely (name match)";
+    const act = fmtAct(m.best_activity);
+    banner = `<div class="pharm-match hit">
+      ✓ Known modulator of the loaded target — <b>${m.target_name}</b> <span class="conf">[${conf}]</span>
+      ${act ? `· best measured <b>${act}</b>` : ""}
+    </div>`;
+  } else {
+    banner = `<div class="pharm-match miss">No measured ChEMBL activity links this chemical to the loaded protein (it may still bind — or simply be unstudied here).</div>`;
+  }
+  const mechs = (ph.mechanisms || [])
+    .map((mm) => {
+      const act = fmtAct(mm.best_activity);
+      return `<tr>
+        <td>${mm.moa || "—"}</td>
+        <td>${mm.target_name || "—"}</td>
+        <td>${act || "—"}</td>
+      </tr>`;
+    })
+    .join("");
+  const mechTable = mechs
+    ? `<table class="data" style="margin-top:8px">
+        <thead><tr><th>Mechanism of action</th><th>Target</th><th>Best measured potency</th></tr></thead>
+        <tbody>${mechs}</tbody>
+       </table>`
+    : `<div class="hint">No curated mechanism-of-action entries in ChEMBL.</div>`;
+  return `
+    <div class="section-h">Known pharmacology (ChEMBL) — ${ph.pref_name || ph.chembl_id}, ${ph.development_status}</div>
+    ${banner}
+    ${mechTable}
+    ${ph.url ? `<div class="hint"><a class="ext" href="${ph.url}" target="_blank">View ${ph.chembl_id} in ChEMBL ↗</a></div>` : ""}`;
 }
 
 // ================= search =================

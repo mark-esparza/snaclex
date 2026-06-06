@@ -88,6 +88,33 @@ def search_by_name(query: str, limit: int = 10) -> list[dict]:
     return results
 
 
+def fetch_uniprot_accessions(pdb_id: str) -> list[str]:
+    """Return the UniProt accessions referenced by a PDB entry (may be empty)."""
+    pid = normalize_pdb_id(pdb_id)
+    import urllib.parse
+
+    query = (
+        '{entry(entry_id:"' + pid + '"){polymer_entities{'
+        "rcsb_polymer_entity_container_identifiers{"
+        "reference_sequence_identifiers{database_name database_accession}}}}}"
+    )
+    url = "https://data.rcsb.org/graphql?query=" + urllib.parse.quote(query)
+    try:
+        data = fetch_json(url)
+    except FetchError:
+        return []
+    accs: list[str] = []
+    entry = (data.get("data") or {}).get("entry") or {}
+    for pe in entry.get("polymer_entities") or []:
+        ids = pe.get("rcsb_polymer_entity_container_identifiers") or {}
+        for ref in ids.get("reference_sequence_identifiers") or []:
+            if ref.get("database_name") == "UniProt" and ref.get("database_accession"):
+                acc = ref["database_accession"]
+                if acc not in accs:
+                    accs.append(acc)
+    return accs
+
+
 def fetch_entry_summaries(ids: list[str]) -> dict:
     """Batch-fetch {pdb_id: {title, organism}} for several entries at once."""
     if not ids:

@@ -75,6 +75,21 @@ def _load_structure(pdb_id: str):
     return entry
 
 
+_UNIPROT_CACHE: dict[str, list] = {}
+
+
+def _get_uniprots(pdb_id: str) -> list:
+    pid = rcsb.normalize_pdb_id(pdb_id)
+    if pid in _UNIPROT_CACHE:
+        return _UNIPROT_CACHE[pid]
+    try:
+        accs = rcsb.fetch_uniprot_accessions(pid)
+    except FetchError:
+        accs = []
+    _UNIPROT_CACHE[pid] = accs
+    return accs
+
+
 def _get_pockets(pdb_id: str) -> list:
     pid = rcsb.normalize_pdb_id(pdb_id)
     with _POCKET_LOCK:
@@ -302,8 +317,22 @@ class Handler(BaseHTTPRequestHandler):
         query = (qs.get("q") or [""])[0].strip()
         if not query:
             return self._send_error_json("Missing 'q' parameter")
+        pdb_id = (qs.get("pdb") or [""])[0].strip()
         compound = pubchem.lookup_compound(query)
-        compound["chembl"] = chembl.lookup_molecule(query)
+
+        # With a loaded protein, cross-reference ChEMBL pharmacology + measured
+        # activity against that target; otherwise just the basic drug status.
+        if pdb_id:
+            try:
+                _t, _s, meta = _load_structure(pdb_id)
+                uniprots = _get_uniprots(pdb_id)
+                compound["pharmacology"] = chembl.pharmacology(
+                    query, uniprots, meta.get("title") or ""
+                )
+            except FetchError:
+                compound["pharmacology"] = None
+        else:
+            compound["chembl"] = chembl.lookup_molecule(query)
         return self._send_json(compound)
 
     def _api_dock(self, qs):
@@ -345,6 +374,14 @@ class Handler(BaseHTTPRequestHandler):
             if len(ref_heavy) == len(lig["atoms"]):
                 redock_rmsd = docking.rmsd_to_reference(pose, ref_component)
 
+        # ChEMBL pharmacology + measured activity vs this target (validation).
+        try:
+            pharmacology = chembl.pharmacology(
+                chem, _get_uniprots(pdb_id), meta.get("title") or ""
+            )
+        except FetchError:
+            pharmacology = None
+
         return self._send_json(
             {
                 "chemical": {
@@ -365,6 +402,7 @@ class Handler(BaseHTTPRequestHandler):
                 "pose_pdb": docking.pose_to_pdb(pose, res_name),
                 "profile": profile,
                 "report": summary,
+                "pharmacology": pharmacology,
                 "methods": _methods_block(
                     meta,
                     site_label,
