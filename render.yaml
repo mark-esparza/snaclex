@@ -1,0 +1,14 @@
+# Render.com blueprint — one-click deploy of AtomScope.
+# In Render: New ▸ Blueprint ▸ pick this repo. No build step, no dependencies.
+services:
+  - type: web
+    name: atomscope
+    runtime: python
+    plan: free
+    buildCommand: ""
+    startCommand: python server.py
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"

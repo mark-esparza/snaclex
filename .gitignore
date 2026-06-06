@@ -21,3 +21,6 @@ Thumbs.db
 
 # Local preview/launch config (machine-specific)
 .claude/
+
+# Archived previous project (kept locally, not part of the repo)
+legacy/
