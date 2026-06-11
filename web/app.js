@@ -262,6 +262,19 @@ function rebuildScene(resetZoom) {
     (state.chains || ["A"]).forEach((ch, i) =>
       v.setStyle({ chain: ch }, { cartoon: { color: palette[i % palette.length], opacity: 0.9 } })
     );
+  } else if (mode === "bfactor") {
+    // Crystallographic B-factor = flexibility / positional uncertainty.
+    // Blue (rigid / low B) -> red (flexible / high B).
+    const atoms = v.getModel(0).selectedAtoms({});
+    let lo = Infinity, hi = -Infinity;
+    atoms.forEach((a) => {
+      if (a.b < lo) lo = a.b;
+      if (a.b > hi) hi = a.b;
+    });
+    if (!isFinite(lo)) { lo = 0; hi = 1; }
+    // roygb maps min->red, max->blue; invert so low B = blue, high B = red.
+    v.setStyle({}, { cartoon: { colorscheme: { prop: "b", gradient: "roygb", min: hi, max: lo }, opacity: 0.95 } });
+    state._bfactorRange = [Math.round(lo * 10) / 10, Math.round(hi * 10) / 10];
   } else {
     v.setStyle({}, { cartoon: { color: "#b3b3b3", opacity: 0.85 } });
   }
@@ -357,6 +370,110 @@ function rebuildScene(resetZoom) {
   setupPicking(v);
   if (resetZoom) v.zoomTo();
   v.render();
+}
+
+// ================= shareable / reproducible scene state =================
+// Serialize the scientific + render state into a URL so a view can be saved,
+// shared, and reproduced exactly (the "portable scene" best practice).
+function buildShareURL() {
+  const p = new URLSearchParams();
+  if (state.pdbId) p.set("pdb", state.pdbId);
+  if (state.colorMode && state.colorMode !== "mono") p.set("color", state.colorMode);
+  if (state.showLines === false) p.set("lines", "0");
+  if (state.showSurface) p.set("surface", "1");
+  if (state.selectedComp) p.set("comp", state.selectedComp.index);
+  if (state.pocketView) p.set("pocket", state.pocketView.index);
+  if (state.dockData && state.dockChem && state.dockSite) {
+    p.set("dock", state.dockChem);
+    p.set("dsite", `${state.dockSite.type}:${state.dockSite.index}`);
+  }
+  if (state.viewer && state.viewer.getView) {
+    const vw = state.viewer.getView();
+    if (vw && vw.length) p.set("view", vw.map((n) => Math.round(n * 1000) / 1000).join(","));
+  }
+  return location.origin + location.pathname + "?" + p.toString();
+}
+
+async function shareView() {
+  if (!state.pdbId) {
+    setStatus("Load a structure first, then share the view.", "error");
+    return;
+  }
+  const url = buildShareURL();
+  try {
+    await navigator.clipboard.writeText(url);
+    setStatus("Shareable link copied to clipboard — it reproduces this exact scene.");
+  } catch (e) {
+    // Clipboard blocked (e.g. non-secure context): show it for manual copy.
+    setStatus("Shareable link: " + url);
+  }
+}
+
+// Reconstruct a scene from URL parameters on page load.
+async function applyURLState() {
+  const p = new URLSearchParams(location.search);
+  const pdb = p.get("pdb");
+  if (!pdb) return;
+  try {
+    await loadStructure(pdb);
+    if (!state.pdbId) return;
+
+    const color = p.get("color");
+    if (color) {
+      state.colorMode = color;
+      const cm = $("#colorMode");
+      if (cm) cm.value = color;
+    }
+    if (p.get("lines") === "0") {
+      state.showLines = false;
+      const tl = $("#toggleLines");
+      if (tl) tl.checked = false;
+    }
+    if (p.get("surface") === "1") {
+      state.showSurface = true;
+      const ts = $("#toggleSurface");
+      if (ts) ts.checked = true;
+    }
+
+    const comp = p.get("comp");
+    if (comp !== null && comp !== "") await selectComponent(parseInt(comp, 10));
+
+    const pocket = p.get("pocket");
+    if (pocket !== null && pocket !== "") {
+      await detectPockets();
+      showPocket(parseInt(pocket, 10));
+    }
+
+    const dock = p.get("dock");
+    const dsite = p.get("dsite");
+    if (dock && dsite) {
+      const [t, idxRaw] = dsite.split(":");
+      const idx = parseInt(idxRaw, 10);
+      if (t === "pocket" && !(state.pockets || []).length) await detectPockets();
+      const label =
+        t === "comp"
+          ? (state.components[idx] && state.components[idx].label) || "site"
+          : `detected pocket #${idx + 1}`;
+      state.dockSite = { type: t, index: idx, label };
+      $("#dockChemInput").value = dock;
+      await runDock();
+    }
+
+    rebuildScene(false);
+    const view = p.get("view");
+    if (view && state.viewer && state.viewer.setView) {
+      try {
+        state.viewer.setView(view.split(",").map(Number));
+        state.viewer.render();
+      } catch (e) {
+        /* ignore bad camera */
+      }
+    }
+    switchTab("viewer");
+    setStatus("Restored a shared scene from the link.");
+  } catch (err) {
+    setStatus(`Could not fully restore the shared scene: ${err.message}`, "error");
+  }
 }
 
 function atomLabel(atom) {
@@ -603,6 +720,7 @@ async function runDock() {
     );
     state.dockPose = { pdb: data.pose_pdb, profile: data.profile, report: data.report };
     state.dockData = data;
+    state.dockChem = chem;
     state.methods = data.methods;
     renderDocking(data);
     compileReport();
@@ -1565,6 +1683,8 @@ function init() {
     }
     state.colorMode = mode;
     rebuildScene(false);
+    if (mode === "bfactor" && state._bfactorRange)
+      setStatus(`Coloured by B-factor (flexibility): blue = rigid/low (${state._bfactorRange[0]} Å²), red = flexible/high (${state._bfactorRange[1]} Å²).`);
   });
   $("#toggleMeasure").addEventListener("change", (e) => {
     state.measureMode = e.target.checked;
@@ -1601,6 +1721,10 @@ function init() {
   });
   $("#exportBtn").addEventListener("click", exportReport);
   $("#compileBtn").addEventListener("click", compileReport);
+  $("#shareView").addEventListener("click", shareView);
+
+  // Restore a shared scene if the URL carries state.
+  if (location.search.includes("pdb=")) applyURLState();
 }
 
 document.addEventListener("DOMContentLoaded", init);
