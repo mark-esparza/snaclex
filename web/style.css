@@ -212,6 +212,13 @@ table.data tr:hover td { background: var(--soft); }
 .res-chip { background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; font-size: 12.5px; }
 .res-chip b { color: var(--ink); }
 .res-chip .rd { color: var(--muted); font-size: 11px; }
+.ix-row { cursor: pointer; }
+.ix-row:hover td { background: #eef2f8; }
+.ix-chip { cursor: pointer; }
+.ix-chip:hover { border-color: var(--ink); }
+.diagram-wrap { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); padding: 8px; margin: 4px 0 8px; }
+.interaction-diagram { width: 100%; height: auto; display: block; }
+.interaction-diagram .ix-chip:hover rect { fill: #eef2f8; stroke: var(--ink); }
 
 /* ---------- pockets ---------- */
 .pocket-controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }

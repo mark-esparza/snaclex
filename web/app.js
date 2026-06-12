@@ -656,7 +656,8 @@ function interactionsHTML(profile) {
     .map((it) => {
       const la = it.ligand_atom;
       const pa = it.protein_atom;
-      return `<tr>
+      const lbl = `${pa.res_name}${pa.res_seq} ${pa.name} ↔ ${la.name}`;
+      return `<tr class="ix-row" data-focus="1" data-chain="${pa.chain}" data-resi="${pa.res_seq}" data-x="${pa.xyz[0]}" data-y="${pa.xyz[1]}" data-z="${pa.xyz[2]}" data-label="${lbl} (${it.distance} Å)">
         <td><span class="pill ${it.type}">${TYPE_LABEL[it.type]}</span></td>
         <td>${la.name} <span style="color:var(--muted)">(${la.element})</span></td>
         <td>${pa.res_name}${pa.res_seq} · ${pa.name} <span style="color:var(--muted)">${pa.chain}</span></td>
@@ -668,7 +669,7 @@ function interactionsHTML(profile) {
   const resChips = profile.contact_residues
     .map(
       (r) =>
-        `<div class="res-chip"><b>${r.res_name}${r.res_seq}</b> <span class="rd">${r.chain} · ${r.total}× · ${r.min_distance}Å</span></div>`
+        `<div class="res-chip ix-chip" data-focus="1" data-chain="${r.chain}" data-resi="${r.res_seq}" data-label="${r.res_name}${r.res_seq} (${r.chain}) — ${r.total} contacts, closest ${r.min_distance} Å"><b>${r.res_name}${r.res_seq}</b> <span class="rd">${r.chain} · ${r.total}× · ${r.min_distance}Å</span></div>`
     )
     .join("");
 
@@ -680,13 +681,86 @@ function interactionsHTML(profile) {
       ${chip("metal_coordination")}
       ${chip("aromatic")}
     </div>
-    <div class="section-h">Atomic contacts — ${profile.component.label}</div>
+    ${interactionDiagramSVG(profile)}
+    <div class="section-h">Atomic contacts — ${profile.component.label} <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(click a row to locate it in 3D)</span></div>
     <table class="data">
       <thead><tr><th>Type</th><th>Ligand atom</th><th>Protein atom</th><th>Distance</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="4">No heavy-atom contacts within cutoffs.</td></tr>`}</tbody>
     </table>
     <div class="section-h">Binding-site residues (perturbation hot spots)</div>
     <div class="res-chips">${resChips || "—"}</div>`;
+}
+
+// 2D ligand-interaction schematic (LigPlot-style): ligand at center, contact
+// residues radially around it, edges styled by interaction type.
+function interactionDiagramSVG(profile) {
+  const res = (profile.contact_residues || []).slice(0, 14);
+  if (!res.length) return "";
+  const W = 660, H = 470, cx = W / 2, cy = H / 2 - 12, rx = 248, ry = 158;
+  const lig = profile.component.res_name || "LIG";
+  const order = ["metal_coordination", "salt_bridge", "hydrogen_bond", "aromatic", "hydrophobic"];
+  const style = {
+    metal_coordination: ["#000000", "none"],
+    salt_bridge: ["#555555", "7,3,2,3"],
+    hydrogen_bond: ["#2b2b2b", "6,4"],
+    aromatic: ["#777777", "3,3"],
+    hydrophobic: ["#9a9a9a", "1,4"],
+  };
+  let edges = "", nodes = "";
+  res.forEach((r, i) => {
+    const ang = -Math.PI / 2 + (i / res.length) * 2 * Math.PI;
+    const x = cx + rx * Math.cos(ang), y = cy + ry * Math.sin(ang);
+    const prim = order.find((t) => r.types.includes(t)) || "hydrophobic";
+    const [col, dash] = style[prim];
+    edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${col}" stroke-width="1.6"${dash !== "none" ? ` stroke-dasharray="${dash}"` : ""}/>`;
+    const mx = cx + rx * 0.6 * Math.cos(ang), my = cy + ry * 0.6 * Math.sin(ang);
+    edges += `<text x="${mx}" y="${my - 2}" font-size="10" fill="#777" text-anchor="middle">${r.min_distance}Å</text>`;
+    nodes += `<g class="ix-chip" data-focus="1" data-chain="${r.chain}" data-resi="${r.res_seq}" data-label="${r.res_name}${r.res_seq} (${r.chain})" style="cursor:pointer">
+      <rect x="${x - 41}" y="${y - 16}" width="82" height="32" rx="6" fill="#f6f6f6" stroke="#bcbcbc"/>
+      <text x="${x}" y="${y - 1}" font-size="12" font-weight="700" text-anchor="middle" fill="#1a1a1a">${r.res_name}${r.res_seq}</text>
+      <text x="${x}" y="${y + 11}" font-size="9" text-anchor="middle" fill="#6b6b6b">${r.chain} · ${r.total}×</text>
+    </g>`;
+  });
+  const present = [...new Set(res.flatMap((r) => r.types))].filter((t) => style[t]);
+  const legend = present
+    .map((t, i) => {
+      const [col, dash] = style[t];
+      return `<g transform="translate(${14 + i * 132}, ${H - 12})">
+        <line x1="0" y1="0" x2="26" y2="0" stroke="${col}" stroke-width="2"${dash !== "none" ? ` stroke-dasharray="${dash}"` : ""}/>
+        <text x="32" y="4" font-size="10" fill="#444">${TYPE_LABEL[t]}</text></g>`;
+    })
+    .join("");
+  return `
+    <div class="section-h">Interaction diagram <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(2D schematic — click a residue to locate it in 3D)</span></div>
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 ${W} ${H}" class="interaction-diagram" xmlns="http://www.w3.org/2000/svg">
+        ${edges}
+        <circle cx="${cx}" cy="${cy}" r="34" fill="#1a1a1a"/>
+        <text x="${cx}" y="${cy + 5}" font-size="15" font-weight="700" text-anchor="middle" fill="#ffffff">${lig}</text>
+        ${nodes}${legend}
+      </svg>
+    </div>`;
+}
+
+// Click a table row / residue chip / diagram node -> locate it in the 3D viewer.
+function focusFromEl(el) {
+  if (!state.viewer) return;
+  const chain = el.getAttribute("data-chain");
+  const resi = parseInt(el.getAttribute("data-resi"), 10);
+  const label = el.getAttribute("data-label") || "";
+  switchTab("viewer");
+  const v = state.viewer;
+  if (!isNaN(resi)) {
+    v.zoomTo({ chain, resi });
+    v.zoom(0.55, 500);
+  }
+  if (state._pickLabel) v.removeLabel(state._pickLabel);
+  const x = parseFloat(el.getAttribute("data-x"));
+  if (!isNaN(x)) {
+    state._pickLabel = v.addLabel(label, _labelStyle({ x, y: parseFloat(el.getAttribute("data-y")), z: parseFloat(el.getAttribute("data-z")) }));
+  }
+  v.render();
+  setStatus(label || `Focused ${el.getAttribute("data-chain")}/${resi}`);
 }
 
 // ================= docking =================
@@ -1722,6 +1796,12 @@ function init() {
   $("#exportBtn").addEventListener("click", exportReport);
   $("#compileBtn").addEventListener("click", compileReport);
   $("#shareView").addEventListener("click", shareView);
+
+  // Delegated: click an interaction row / residue chip / diagram node -> 3D.
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-focus]");
+    if (el) focusFromEl(el);
+  });
 
   // Restore a shared scene if the URL carries state.
   if (location.search.includes("pdb=")) applyURLState();
