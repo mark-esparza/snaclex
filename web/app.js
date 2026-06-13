@@ -1,5 +1,15 @@
 "use strict";
 
+// HTML-escape any value interpolated into innerHTML, so text/attributes coming
+// from upstream services (PubChem/RCSB/ChEMBL) can never break out of their
+// markup context. Defense-in-depth alongside the server's Content-Security-Policy.
+function esc(value) {
+  return String(value == null ? "" : value).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
+
 // ---------- interaction line shades (grayscale, no hue) ----------
 const COLORS = {
   hydrogen_bond: 0x222222,
@@ -1551,7 +1561,7 @@ function renderChemical(d) {
 
   c.innerHTML = `
     <div class="chem-head">
-      ${d.image_url ? `<img class="chem-img" src="${d.image_url}" alt="2D structure" />` : ""}
+      ${d.image_url ? `<img class="chem-img" src="${esc(d.image_url)}" alt="2D structure" />` : ""}
       <div class="chem-info">
         <h3>${d.iupac_name || d.query}</h3>
         <div class="pdbid" style="font-family:monospace">CID ${d.cid} · ${d.molecular_formula || ""}</div>

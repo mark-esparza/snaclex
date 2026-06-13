@@ -32,66 +32,59 @@ The audit flags "low observable production maturity": no tests, no CI, no
 version/changelog surfaced. None of the later phases are safe to land without a
 test harness.
 
-- [ ] **Add a test suite** (`tests/`, stdlib `unittest` — no pytest needed).
+- [x] **Add a test suite** (`tests/`, stdlib `unittest` — no pytest needed).
   Cover the pure-compute modules first since they have no network dependency:
   `pdbparse`, `pockets`, `docking`, `interactions`, `evolution`. Use the
   validation cases already named in the README (1HSG, 1CA2 → top pocket recovers
-  the true ligand site) as golden tests.
-- [ ] **Mock the network layer** — `snaclex/http_util.py` is the single choke
-  point for all outbound fetches (RCSB, PubChem, ChEMBL, Pfam). Inject a
-  fixture/monkeypatch seam there so `rcsb`/`pubchem`/`chembl`/`evolution` are
-  testable offline with checked-in sample payloads.
-- [ ] **GitHub Actions CI** — run the test suite + `python -m py_compile` on
-  push/PR. Cheap, and directly answers the audit's "no operational maturity"
-  point.
-- [ ] **CHANGELOG.md + version surfacing** — `__version__` exists in
-  `snaclex/__init__.py` (`0.1.0`) and is already echoed in the methods block; also
-  surface it in the UI footer and add a `/api/version` endpoint.
+  the true ligand site) as golden tests. _(Done: 66 offline tests in `tests/`.)_
+- [x] **Mock the network layer** — `snaclex/http_util.py` is the single choke
+  point for all outbound fetches (RCSB, PubChem, ChEMBL, Pfam). `test_http_util`
+  establishes the monkeypatch seam (retry/backoff, 4xx fast-fail, rate-limit),
+  and `test_rcsb` uses it to test a client fully offline.
+- [x] **GitHub Actions CI** — `.github/workflows/ci.yml` byte-compiles the
+  sources and runs the suite on Python 3.11/3.12/3.13 for every push and PR.
+- [x] **CHANGELOG.md** added; version now shown in the UI footer.
+  _Remaining:_ a `/api/version` endpoint (deferred to Phase 2 alongside the API
+  contract work).
 
 ---
 
-## Phase 1 — Security & privacy baseline (audit priority: HIGH)
+## Phase 1 — Security & privacy baseline (audit priority: HIGH) — ✅ done
 
-The audit's highest-confidence risk class. The current `Handler` sends no
-security headers and has no rate limiting; user inputs flow into a rich UI.
+The audit's highest-confidence risk class. Implemented in `server.py`
+(`_common_headers`, `RateLimiter`, `clean_text`) with coverage in
+`tests/test_security.py`.
 
-### 1a. Security headers (stdlib, low effort)
-Add a single `_send_headers` helper used by both `_send_json` and
-`_serve_static` in `server.py`:
-- [ ] `Content-Security-Policy` — the UI loads 3Dmol.js; lock script sources to
-  self + the specific CDN, disallow inline where feasible.
-- [ ] `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
-  `X-Frame-Options: DENY` (or `frame-ancestors` in CSP).
-- [ ] `Strict-Transport-Security` when served over HTTPS (Render terminates TLS).
-- [ ] Explicit, narrow **CORS** policy (default: same-origin only). Today there
-  is no `Access-Control-Allow-Origin` header at all — make the absence
-  deliberate and documented.
+### 1a. Security headers (stdlib, low effort) — ✅
+`_common_headers()` is emitted by both `_send_json` and `_serve_static`:
+- [x] `Content-Security-Policy` — scripts locked to self + `https://3Dmol.org`
+  (and `blob:` for its surface worker); images to self + PubChem; framing and
+  plugins blocked. No inline scripts; inline styles allowed for `style=` attrs.
+- [x] `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+  `X-Frame-Options: DENY` (plus `frame-ancestors 'none'` in CSP).
+- [x] `Strict-Transport-Security` emitted when `X-Forwarded-Proto: https`.
+- [x] **CORS** deliberately same-origin (no `Access-Control-Allow-Origin`),
+  documented in `_common_headers`.
 
-### 1b. Input validation hardening (stdlib)
-Current validation is partial: `rcsb.normalize_pdb_id`, integer parsing of
-`comp`/`pocket`, and a 10-item cap on screening. Tighten:
-- [ ] Strict allowlist/length bounds on `pdb` (4-char alphanumeric), `chem`/`q`
-  (length-capped, control-char stripped), and `chems` tokens.
-- [ ] Confirm all server-derived text is safely encoded where `web/app.js`
-  injects it into the DOM (audit's XSS concern) — prefer `textContent` over
-  `innerHTML` for any value originating from RCSB/PubChem/ChEMBL.
+### 1b. Input validation hardening (stdlib) — ✅
+- [x] `clean_text()` NUL/control-char strips and length-caps `q`, `chem`, and
+  `chems`; batch-screen tokens are individually bounded (`MAX_QUERY_LEN`).
+- [x] XSS: added an `esc()` HTML-escaper in `app.js` for upstream-derived values,
+  backed by the CSP. _(A full `innerHTML`→`textContent` sweep of all 19 sites
+  remains a follow-up; CSP is the primary mitigation in the meantime.)_
 
-### 1c. Resource-abuse / DoS controls (stdlib)
-The audit's most credible risk: pocketing, conservation, docking, and screening
-are compute-heavy on a public anonymous service running a `ThreadingHTTPServer`.
-- [ ] **Per-IP token-bucket rate limiter** in `Handler` (in-memory, stdlib) on
-  the expensive endpoints (`/api/dock`, `/api/screen`, `/api/pockets`,
-  `/api/evolution`), returning `429` with `Retry-After`.
-- [ ] **Global concurrency cap** (bounded worker semaphore) so a burst of docking
-  jobs can't exhaust the box; return `503` with backpressure when saturated.
-- [ ] Per-request time/size budgets for the docking search.
+### 1c. Resource-abuse / DoS controls (stdlib) — ✅
+- [x] **Per-IP token-bucket rate limiter** (`RateLimiter`) on all `/api/*`, with
+  a stricter budget for the expensive endpoints, returning `429` + `Retry-After`.
+- [x] **Global concurrency cap** (`BoundedSemaphore`) → `503` + `Retry-After`
+  when saturated. All limits tunable via env vars.
+- [ ] Per-request time/size budgets for the docking search itself _(deferred to
+  Phase 3, where docking moves to the async job model)_.
 
-### 1d. Privacy & policy pages (content, low effort)
-The audit's clearest external-compliance gap: no privacy/terms/cookie notice.
-- [ ] Add `web/privacy.html` and `web/terms.html`: what's collected (request
-  logs/IP only — no accounts, no PII inputs), retention, third-party data
-  sources (RCSB/PubChem/ChEMBL/Pfam) and their terms (already in `NOTICE`),
-  and the research-only disclaimer. Link from the UI footer.
+### 1d. Privacy & policy pages (content, low effort) — ✅
+- [x] `web/privacy.html` and `web/terms.html` (no accounts/cookies/trackers,
+  what's collected, retention, third-party sources + `NOTICE`, research-only
+  disclaimer), linked from a new site footer.
 
 ---
 

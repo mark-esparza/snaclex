@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SnaCleX — Privacy Notice</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⬡</span>
+      <div>
+        <h1>SnaCleX</h1>
+        <p class="tagline">Privacy notice</p>
+      </div>
+    </div>
+    <div class="research-badge">RESEARCH ONLY · not for clinical use</div>
+  </header>
+
+  <main class="policy">
+    <p class="policy-updated">Last updated: 2026-06-13</p>
+
+    <h2>What SnaCleX is</h2>
+    <p>
+      SnaCleX is a research-only tool for analyzing public protein structures and
+      chemical data. It has <b>no user accounts, logins, or profiles</b>, and it
+      does not ask for your name, email, or any personal or clinical information.
+    </p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li>
+        <b>The scientific identifiers you enter</b> — PDB IDs, protein names,
+        chemical names/CIDs, and screening lists. These are sent to the server to
+        run your analysis and to query the upstream data sources below.
+      </li>
+      <li>
+        <b>Standard request metadata</b> — your IP address and basic request
+        details are processed transiently to serve responses and to enforce rate
+        limits that keep the service available. We do not use this to identify or
+        track individuals.
+      </li>
+    </ul>
+    <p>
+      SnaCleX sets <b>no cookies</b> and uses <b>no third-party advertising or
+      analytics trackers</b>.
+    </p>
+
+    <h2>Third-party data sources</h2>
+    <p>
+      To analyze a structure, the server queries public scientific services on
+      your behalf. Your query terms are shared with whichever services are needed:
+    </p>
+    <ul>
+      <li><b>RCSB Protein Data Bank</b> — structure files, metadata, and search.</li>
+      <li><b>PubChem</b> (NCBI) — chemical properties and 3D conformers.</li>
+      <li><b>ChEMBL</b> (EMBL-EBI) — drug/bioactivity cross-references.</li>
+      <li><b>Pfam / InterPro</b> (EMBL-EBI) — family alignments for conservation.</li>
+    </ul>
+    <p>
+      Each service is governed by its own terms and privacy practices — see
+      <a href="https://github.com/mark-esparza/snaclex/blob/main/NOTICE">NOTICE</a>.
+    </p>
+
+    <h2>Retention</h2>
+    <p>
+      Analysis results are computed per request and held only in a small, bounded
+      in-memory cache to speed up repeat lookups; they are not written to a
+      database and are lost when the service restarts. Reports you export
+      (<code>.txt</code>) are generated in your browser session.
+    </p>
+
+    <h2>Your choices</h2>
+    <p>
+      Because there are no accounts and no persistent personal records, there is
+      no profile to access or delete. Simply stop using the tool to stop sending
+      data. Questions can be directed to the project maintainer via the
+      repository.
+    </p>
+
+    <p class="policy-foot"><a href="/">← Back to SnaCleX</a> · <a href="/terms.html">Terms</a></p>
+  </main>
+</body>
+</html>

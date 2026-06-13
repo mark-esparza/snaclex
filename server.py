@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -55,6 +56,97 @@ _CONTENT_TYPES = {
     ".png": "image/png",
     ".ico": "image/x-icon",
 }
+
+# ---------------------------------------------------------------------------
+# Security / abuse controls
+# ---------------------------------------------------------------------------
+
+# Content Security Policy tuned to exactly what the app loads: the 3Dmol.js
+# viewer from its CDN (and the blob: web worker it spawns for surface meshes),
+# PubChem 2D structure images, and same-origin everything else. Inline styles
+# are allowed because the markup uses a few `style="…"` attributes.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://3Dmol.org blob:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob: https://pubchem.ncbi.nlm.nih.gov; "
+    "connect-src 'self'; "
+    "worker-src 'self' blob:; "
+    "font-src 'self'; object-src 'none'; base-uri 'self'; "
+    "frame-ancestors 'none'; form-action 'self'"
+)
+
+# Compute-heavy endpoints get a tighter per-IP budget plus a global concurrency
+# cap, so a burst of docking/pocket jobs can't exhaust a small (e.g. Render
+# free-tier) instance.
+EXPENSIVE_ENDPOINTS = {"/api/dock", "/api/screen", "/api/pockets", "/api/evolution"}
+
+MAX_QUERY_LEN = 200       # single chemical / search term
+MAX_CHEMS_LEN = 2000      # batch-screening textarea
+
+
+def _env_float(name, default):
+    raw = os.environ.get(name)
+    try:
+        return float(raw) if raw else default
+    except ValueError:
+        return default
+
+
+class RateLimiter:
+    """Thread-safe token bucket keyed by client identifier (IP).
+
+    `capacity` tokens accrue at `rate` tokens/second; each allowed request
+    spends `cost` tokens. Returns (allowed: bool, retry_after_seconds: float).
+    """
+
+    def __init__(self, rate, capacity, time_fn=time.monotonic, max_keys=4096):
+        self.rate = rate
+        self.capacity = capacity
+        self._time = time_fn
+        self._max_keys = max_keys
+        self._lock = threading.Lock()
+        self._buckets: dict[str, tuple] = {}
+
+    def allow(self, key, cost=1.0):
+        now = self._time()
+        with self._lock:
+            tokens, last = self._buckets.get(key, (self.capacity, now))
+            tokens = min(self.capacity, tokens + (now - last) * self.rate)
+            if tokens >= cost:
+                self._buckets[key] = (tokens - cost, now)
+                self._evict_if_needed()
+                return True, 0.0
+            self._buckets[key] = (tokens, now)
+            retry = (cost - tokens) / self.rate if self.rate else 60.0
+            return False, retry
+
+    def _evict_if_needed(self):
+        # Bound memory: drop the oldest-touched keys when the table grows large.
+        if len(self._buckets) > self._max_keys:
+            oldest = sorted(self._buckets, key=lambda k: self._buckets[k][1])
+            for k in oldest[: self._max_keys // 4]:
+                self._buckets.pop(k, None)
+
+
+# General per-IP budget across all /api/* calls, plus a stricter one for the
+# expensive compute endpoints. All tunable via env for ops.
+_IP_LIMITER = RateLimiter(
+    rate=_env_float("SNACLEX_RATE", 2.0),
+    capacity=_env_float("SNACLEX_BURST", 60.0),
+)
+_HEAVY_LIMITER = RateLimiter(
+    rate=_env_float("SNACLEX_HEAVY_RATE", 0.2),
+    capacity=_env_float("SNACLEX_HEAVY_BURST", 6.0),
+)
+_HEAVY_SEM = threading.BoundedSemaphore(int(_env_float("SNACLEX_MAX_CONCURRENCY", 4)))
+
+
+def clean_text(value, max_len=MAX_QUERY_LEN):
+    """Strip NULs/control chars (keeping tab/newline) and cap a free-text param."""
+    v = (value or "").replace("\x00", "")
+    v = "".join(ch for ch in v if ch >= " " or ch in "\t\n")
+    return v.strip()[:max_len]
 
 
 def _load_structure(pdb_id: str):
@@ -251,16 +343,41 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     # ---- helpers ------------------------------------------------------
-    def _send_json(self, payload, status=200):
+    def _common_headers(self):
+        """Security headers emitted on every response.
+
+        No Access-Control-Allow-Origin is sent: the API is deliberately
+        same-origin only (the browser talks to /api/*, which proxies the
+        upstream scientific services server-side).
+        """
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", _CSP)
+        if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
+            self.send_header(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+
+    def _client_ip(self):
+        fwd = self.headers.get("X-Forwarded-For", "")
+        if fwd:
+            return fwd.split(",")[0].strip()
+        return self.client_address[0] if self.client_address else "unknown"
+
+    def _send_json(self, payload, status=200, retry_after=None):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        if retry_after is not None:
+            self.send_header("Retry-After", str(int(retry_after) + 1))
+        self._common_headers()
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_error_json(self, message, status=400):
-        self._send_json({"error": message}, status=status)
+    def _send_error_json(self, message, status=400, retry_after=None):
+        self._send_json({"error": message}, status=status, retry_after=retry_after)
 
     def _serve_static(self, path):
         if path in ("/", ""):
@@ -277,6 +394,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self._common_headers()
         self.end_headers()
         self.wfile.write(body)
 
@@ -286,28 +404,59 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         qs = parse_qs(parsed.query)
 
+        if path.startswith("/api/"):
+            ip = self._client_ip()
+            ok, retry = _IP_LIMITER.allow(ip)
+            if not ok:
+                return self._send_error_json(
+                    "Too many requests; please slow down.",
+                    status=429, retry_after=retry,
+                )
+            if path in EXPENSIVE_ENDPOINTS:
+                ok, retry = _HEAVY_LIMITER.allow(ip)
+                if not ok:
+                    return self._send_error_json(
+                        "This analysis is rate-limited; try again shortly.",
+                        status=429, retry_after=retry,
+                    )
+                if not _HEAVY_SEM.acquire(blocking=False):
+                    return self._send_error_json(
+                        "Server is busy running analyses; please retry in a moment.",
+                        status=503, retry_after=5,
+                    )
+                try:
+                    return self._guarded_route(path, qs)
+                finally:
+                    _HEAVY_SEM.release()
+
+        return self._guarded_route(path, qs)
+
+    def _guarded_route(self, path, qs):
         try:
-            if path == "/api/analyze":
-                return self._api_analyze(qs)
-            if path == "/api/interactions":
-                return self._api_interactions(qs)
-            if path == "/api/chemical":
-                return self._api_chemical(qs)
-            if path == "/api/pockets":
-                return self._api_pockets(qs)
-            if path == "/api/evolution":
-                return self._api_evolution(qs)
-            if path == "/api/dock":
-                return self._api_dock(qs)
-            if path == "/api/screen":
-                return self._api_screen(qs)
-            if path == "/api/search":
-                return self._api_search(qs)
-            return self._serve_static(path)
+            return self._route(path, qs)
         except FetchError as exc:
             return self._send_error_json(str(exc), status=502)
         except Exception as exc:  # noqa: BLE001 - surface as JSON for the UI
             return self._send_error_json(f"Internal error: {exc}", status=500)
+
+    def _route(self, path, qs):
+        if path == "/api/analyze":
+            return self._api_analyze(qs)
+        if path == "/api/interactions":
+            return self._api_interactions(qs)
+        if path == "/api/chemical":
+            return self._api_chemical(qs)
+        if path == "/api/pockets":
+            return self._api_pockets(qs)
+        if path == "/api/evolution":
+            return self._api_evolution(qs)
+        if path == "/api/dock":
+            return self._api_dock(qs)
+        if path == "/api/screen":
+            return self._api_screen(qs)
+        if path == "/api/search":
+            return self._api_search(qs)
+        return self._serve_static(path)
 
     # ---- API endpoints ------------------------------------------------
     def _api_analyze(self, qs):
@@ -344,7 +493,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json({"profile": profile, "report": summary})
 
     def _api_chemical(self, qs):
-        query = (qs.get("q") or [""])[0].strip()
+        query = clean_text((qs.get("q") or [""])[0])
         if not query:
             return self._send_error_json("Missing 'q' parameter")
         pdb_id = (qs.get("pdb") or [""])[0].strip()
@@ -367,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _api_dock(self, qs):
         pdb_id = (qs.get("pdb") or [""])[0]
-        chem = (qs.get("chem") or [""])[0].strip()
+        chem = clean_text((qs.get("chem") or [""])[0])
         comp_raw = (qs.get("comp") or [""])[0]
         pocket_raw = (qs.get("pocket") or [""])[0]
         if not pdb_id or not chem or (comp_raw == "" and pocket_raw == ""):
@@ -451,13 +600,17 @@ class Handler(BaseHTTPRequestHandler):
         import re
 
         pdb_id = (qs.get("pdb") or [""])[0]
-        chems_raw = (qs.get("chems") or [""])[0]
+        chems_raw = clean_text((qs.get("chems") or [""])[0], max_len=MAX_CHEMS_LEN)
         comp_raw = (qs.get("comp") or [""])[0]
         pocket_raw = (qs.get("pocket") or [""])[0]
         if not pdb_id or not chems_raw:
             return self._send_error_json("Need 'pdb' and 'chems' (comma-separated)")
 
-        tokens = [t.strip() for t in re.split(r"[,;\n]+", chems_raw) if t.strip()]
+        tokens = [
+            t.strip()[:MAX_QUERY_LEN]
+            for t in re.split(r"[,;\n]+", chems_raw)
+            if t.strip()
+        ]
         # De-duplicate, preserve order, cap to keep runtime bounded.
         seen = set()
         chem_list = []
@@ -554,7 +707,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json({"available": True, **evo})
 
     def _api_search(self, qs):
-        query = (qs.get("q") or [""])[0].strip()
+        query = clean_text((qs.get("q") or [""])[0])
         if not query:
             return self._send_error_json("Missing 'q' parameter")
         return self._send_json({"results": rcsb.search_by_name(query, limit=10)})
