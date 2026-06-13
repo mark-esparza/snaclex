@@ -161,3 +161,20 @@ legacy/                previous StructInteract CLI (archived)
 | `GET /api/dock?pdb=ID&chem=NAME&comp=INDEX` | dock a PubChem chemical into component INDEX's site; returns pose + interaction profile |
 | `GET /api/dock?pdb=ID&chem=NAME&pocket=INDEX` | same, but dock into detected pocket INDEX (apo workflow) |
 | `GET /api/search?q=TEXT` | PDB full-text search results |
+
+## Development
+
+SnaCleX has a stdlib-only test suite (no pytest, no third-party deps). Run it
+from the repo root:
+
+```
+python -m unittest discover -s tests -v
+```
+
+The tests are fully offline — the pure-compute modules run on small synthetic
+structures, and the HTTP layer is exercised through a mock seam, so no live RCSB
+/ PubChem / ChEMBL calls are made. CI (`.github/workflows/ci.yml`) byte-compiles
+the sources and runs the suite on Python 3.11–3.13.
+
+See [ROADMAP.md](ROADMAP.md) for planned work and [CHANGELOG.md](CHANGELOG.md)
+for recent changes.
