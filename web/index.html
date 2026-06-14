@@ -24,13 +24,24 @@
     <aside class="rail">
       <section class="card">
         <h2>1 · Load a protein</h2>
-        <label class="field-label">PDB ID or protein name</label>
+        <label class="field-label" for="pdbInput">PDB ID or protein name</label>
         <div class="inline">
-          <input id="pdbInput" type="text" placeholder="PDB ID or protein" />
+          <input id="pdbInput" type="text" placeholder="PDB ID or protein" aria-label="PDB ID or protein name" />
           <button id="loadBtn" class="primary">Go</button>
         </div>
         <div class="hint">Enter a 4-character <b>PDB ID</b> to load it, or a <b>name</b> to search RCSB.</div>
-        <div id="searchResults" class="search-results"></div>
+        <div class="examples">
+          Try an example:
+          <button class="ex" data-pdb="1HSG" title="HIV-1 protease with the inhibitor indinavir — a clean holo example">1HSG</button>
+          <button class="ex" data-pdb="1CA2" title="Carbonic anhydrase II with a catalytic zinc — metal coordination example">1CA2</button>
+          <button class="ex" data-pdb="4HHB" title="Haemoglobin — multi-chain, heme groups">4HHB</button>
+        </div>
+        <div class="upload-row">
+          <label class="upload-btn" for="uploadInput">Upload PDB…</label>
+          <input id="uploadInput" type="file" accept=".pdb,.ent,chemical/x-pdb" aria-label="Upload a PDB-format structure file" />
+          <span class="hint" style="margin:0">Analyze your own PDB-format file locally (not stored).</span>
+        </div>
+        <div id="searchResults" class="search-results" aria-live="polite"></div>
       </section>
 
       <section class="card" id="componentCard" hidden>
@@ -62,7 +73,7 @@
         <button class="tab" data-tab="report">Report</button>
       </nav>
 
-      <div id="statusBar" class="status-bar">Enter a PDB ID to begin.</div>
+      <div id="statusBar" class="status-bar" role="status" aria-live="polite">Enter a PDB ID to begin.</div>
 
       <section class="panel active" data-panel="overview">
         <div id="overviewContent" class="empty">No structure loaded yet.</div>
@@ -163,6 +174,7 @@
   <footer class="sitefoot">
     <span>SnaCleX v0.1.0 · Research only — not for clinical use.</span>
     <nav class="sitefoot-nav">
+      <a href="/api.html">API</a>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
       <span class="muted">Data: RCSB · PubChem · ChEMBL · Pfam</span>

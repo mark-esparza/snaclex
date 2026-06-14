@@ -152,15 +152,21 @@ legacy/                previous StructInteract CLI (archived)
 
 ## API
 
+The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
+
 | Endpoint | Returns |
 | --- | --- |
 | `GET /api/analyze?pdb=ID` | metadata, chains, components, raw PDB text |
 | `GET /api/interactions?pdb=ID&comp=INDEX` | interaction profile + report |
 | `GET /api/chemical?q=NAME` | PubChem properties + druglikeness + ChEMBL |
-| `GET /api/pockets?pdb=ID` | detected geometric cavities (ranked), with volume + lining residues |
-| `GET /api/dock?pdb=ID&chem=NAME&comp=INDEX` | dock a PubChem chemical into component INDEX's site; returns pose + interaction profile |
-| `GET /api/dock?pdb=ID&chem=NAME&pocket=INDEX` | same, but dock into detected pocket INDEX (apo workflow) |
+| `GET /api/pockets?pdb=ID` | detected geometric cavities (ranked) + methods/provenance |
+| `GET /api/evolution?pdb=ID` | Pfam conservation per residue/pocket + methods/provenance |
 | `GET /api/search?q=TEXT` | PDB full-text search results |
+| `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
+| `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |
+| `POST /api/upload` | analyze a user-supplied PDB-format file (returns an upload id usable as `ID` above) |
+
+`ID` is a 4-char PDB id **or** an upload id from `POST /api/upload`.
 
 ## Development
 

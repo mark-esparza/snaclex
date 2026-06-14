@@ -18,6 +18,7 @@ import json
 import os
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -25,6 +26,7 @@ import datetime
 
 from snaclex import __version__ as SNACLEX_VERSION
 from snaclex import (
+    apidocs,
     chembl,
     docking,
     evolution,
@@ -55,6 +57,20 @@ _POCKET_LOCK = threading.Lock()
 _GRID_CACHE: dict[tuple, "docking.Grid"] = {}
 _GRID_LOCK = threading.Lock()
 _GRID_MAX = 16
+
+# User-uploaded structures: id -> (text, Structure, meta). Kept only in memory,
+# bounded, and never written to disk (see privacy policy).
+_UPLOAD_CACHE: dict[str, tuple] = {}
+_UPLOAD_LOCK = threading.Lock()
+_UPLOAD_MAX = 8
+MAX_UPLOAD_BYTES = 5_000_000
+
+
+def _norm_id(pdb_id: str) -> str:
+    """Normalize a structure id: pass through upload ids, else validate as PDB."""
+    if pdb_id in _UPLOAD_CACHE:
+        return pdb_id
+    return rcsb.normalize_pdb_id(pdb_id)
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -164,6 +180,12 @@ def clean_text(value, max_len=MAX_QUERY_LEN):
 
 
 def _load_structure(pdb_id: str):
+    # User-uploaded structures live in their own cache, keyed by upload id.
+    with _UPLOAD_LOCK:
+        up = _UPLOAD_CACHE.get(pdb_id)
+    if up is not None:
+        return up
+
     pid = rcsb.normalize_pdb_id(pdb_id)
     with _CACHE_LOCK:
         cached = _CACHE.get(pid)
@@ -189,7 +211,7 @@ _EVO_CACHE: dict[str, dict] = {}
 
 
 def _get_evolution(pdb_id: str) -> dict | None:
-    pid = rcsb.normalize_pdb_id(pdb_id)
+    pid = _norm_id(pdb_id)
     if pid in _EVO_CACHE:
         return _EVO_CACHE[pid]
     _text, structure, _meta = _load_structure(pid)
@@ -213,7 +235,7 @@ _UNIPROT_CACHE: dict[str, list] = {}
 
 
 def _get_uniprots(pdb_id: str) -> list:
-    pid = rcsb.normalize_pdb_id(pdb_id)
+    pid = _norm_id(pdb_id)
     if pid in _UNIPROT_CACHE:
         return _UNIPROT_CACHE[pid]
     try:
@@ -225,7 +247,7 @@ def _get_uniprots(pdb_id: str) -> list:
 
 
 def _get_pockets(pdb_id: str) -> list:
-    pid = rcsb.normalize_pdb_id(pdb_id)
+    pid = _norm_id(pdb_id)
     with _POCKET_LOCK:
         cached = _POCKET_CACHE.get(pid)
     if cached is not None:
@@ -241,7 +263,7 @@ def _get_pockets(pdb_id: str) -> list:
 
 def _get_grid(pdb_id, structure, center):
     """Return a cached docking grid for (pdb_id, site center), building if needed."""
-    pid = rcsb.normalize_pdb_id(pdb_id)
+    pid = _norm_id(pdb_id)
     key = (pid, tuple(round(c, 1) for c in center))
     with _GRID_LOCK:
         grid = _GRID_CACHE.get(key)
@@ -528,7 +550,7 @@ def run_screen_job(params: dict) -> dict:
         meta, site_label, center, {"seeds": 160, "mc_steps": 40, "random_seed": 0}
     )
     return {
-        "pdb_id": rcsb.normalize_pdb_id(pdb_id),
+        "pdb_id": _norm_id(pdb_id),
         "site": site_label,
         "count": len(results),
         "results": results,
@@ -665,14 +687,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_search(qs)
         if path == "/api/version":
             return self._api_version(qs)
+        if path == "/api/docs":
+            return self._send_json(apidocs.contract())
         if path.startswith("/api/jobs/"):
             return self._api_job_status(path)
         return self._serve_static(path)
 
-    # ---- job submission (POST /api/jobs) ------------------------------
+    # ---- POST endpoints ----------------------------------------------
     def do_POST(self):
         path = urlparse(self.path).path
-        if path != "/api/jobs":
+        if path not in ("/api/jobs", "/api/upload"):
             return self._send_error_json("Not found", status=404)
 
         ip = self._client_ip()
@@ -687,6 +711,9 @@ class Handler(BaseHTTPRequestHandler):
                 "This analysis is rate-limited; try again shortly.",
                 status=429, retry_after=retry,
             )
+
+        if path == "/api/upload":
+            return self._guarded_upload()
 
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > 8192:
@@ -707,6 +734,51 @@ class Handler(BaseHTTPRequestHandler):
 
         job_id = JOBS.submit(_JOB_RUNNERS[kind], params)
         return self._send_json({"job_id": job_id, "status": "queued"}, status=202)
+
+    def _guarded_upload(self):
+        try:
+            return self._api_upload()
+        except Exception as exc:  # noqa: BLE001
+            return self._send_error_json(f"Could not parse structure: {exc}")
+
+    def _api_upload(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return self._send_error_json("Empty upload")
+        if length > MAX_UPLOAD_BYTES:
+            return self._send_error_json(
+                f"Structure too large (max {MAX_UPLOAD_BYTES // 1_000_000} MB)",
+                status=413,
+            )
+        raw = self.rfile.read(length).decode("utf-8", errors="replace")
+
+        # mmCIF isn't supported by the PDB-format parser yet — fail clearly.
+        if "_atom_site." in raw and "ATOM " not in raw[:2000]:
+            return self._send_error_json(
+                "mmCIF is not supported yet — please upload a PDB-format file."
+            )
+
+        structure = pdbparse.parse_pdb(raw)
+        if len(structure.protein_atoms) < 10:
+            return self._send_error_json(
+                "No protein atoms found — is this a valid PDB file?"
+            )
+
+        upload_id = "UL" + uuid.uuid4().hex[:10]
+        meta = {"pdb_id": upload_id, "title": "Uploaded structure", "uploaded": True}
+        with _UPLOAD_LOCK:
+            if len(_UPLOAD_CACHE) >= _UPLOAD_MAX:
+                _UPLOAD_CACHE.pop(next(iter(_UPLOAD_CACHE)))
+            _UPLOAD_CACHE[upload_id] = (raw, structure, meta)
+
+        return self._send_json({
+            "upload_id": upload_id,
+            "metadata": meta,
+            "chains": structure.chains,
+            "protein_atom_count": len(structure.protein_atoms),
+            "components": _components_json(structure),
+            "pdb_data": raw,
+        })
 
     def _api_job_status(self, path):
         job_id = path[len("/api/jobs/"):]

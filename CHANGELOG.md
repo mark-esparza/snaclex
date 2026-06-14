@@ -5,6 +5,25 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### API contract & custom structures (Phase 6)
+- **Documented API** — `snaclex/apidocs.py` serves a machine-readable contract at
+  `GET /api/docs` (params, request bodies, limits, error shapes), rendered as a
+  human page at `/api.html` and linked from the footer.
+- **Custom structure upload** — `POST /api/upload` accepts a user-supplied
+  PDB-format file (size-capped, validated, kept only in a bounded in-memory
+  cache — never written to disk). It returns an upload id usable anywhere a PDB
+  id is, so uploaded structures flow through analyze / interactions / pockets /
+  docking / screening. mmCIF is detected and rejected with a clear message
+  (not yet supported); conservation needs a real PDB id so it's unavailable for
+  uploads. Frontend gets an "Upload PDB…" control.
+
+### Accessibility & onboarding (Phase 5)
+- **Example structures** — one-click 1HSG / 1CA2 / 4HHB buttons in the load card.
+- **Accessibility** — visible keyboard-focus styles (`:focus-visible`), an
+  `aria-live` status region, and labelled inputs.
+- **Responsive** — the single-screen layout stacks on narrow viewports
+  (≤ 820 px) instead of crowding.
+
 ### Docking rigor (Phase 4, partial)
 - **Redocking benchmark harness** (`snaclex/benchmark.py` + `python -m
   snaclex.benchmark`) — self-docks each crystallographic ligand back into its
@@ -69,7 +88,7 @@ All notable changes to SnaCleX are documented here. This project adheres to
 - **Privacy & Terms pages** (`web/privacy.html`, `web/terms.html`) linked from a
   new site footer: no accounts/cookies/trackers, what's collected, third-party
   data sources, retention, and the research-only disclaimer.
-- **Test suite** (`tests/`) — 100 stdlib `unittest` cases covering the
+- **Test suite** (`tests/`) — 108 stdlib `unittest` cases covering the
   pure-compute core (`pdbparse`, `interactions`, `docking`, `pockets`,
   `report`) plus the PubChem/RCSB helpers. Runs fully offline; the HTTP fetch
   layer (`http_util`) is exercised via a mock seam (retry/backoff, fast-fail on
@@ -82,8 +101,9 @@ All notable changes to SnaCleX are documented here. This project adheres to
   mapped to the actual codebase and the project's zero-dependency philosophy.
 
 _This covers Phase 0 (engineering hygiene), Phase 1 (security & privacy
-baseline), Phase 2 (provenance & structured export), Phase 3 (async jobs & caching), and
-Phase 4 (docking benchmark harness) of the roadmap._
+baseline), Phase 2 (provenance & structured export), Phase 3 (async jobs & caching),
+Phase 4 (docking benchmark harness), Phase 5 (accessibility & onboarding), and
+Phase 6 (API contract & structure upload) of the roadmap._
 
 ## [0.1.0]
 

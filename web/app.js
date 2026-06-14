@@ -141,53 +141,79 @@ async function loadStructure(pdbId) {
   $("#searchResults").innerHTML = "";
   try {
     const data = await getJSON(`/api/analyze?pdb=${pdbId}`);
-    state.pdbId = pdbId;
-    state.pdbData = data.pdb_data;
-    state.meta = data.metadata;
-    state.components = data.components;
-    state.chains = data.chains;
-    state.proteinAtomCount = data.protein_atom_count;
-    state.selectedComp = null;
-    state.profile = null;
-    state.report = null;
-    state.dockData = null;
-    state.screen = null;
-    state.dockPose = null;
-    state.methods = null;
-    state.pockets = [];
-    state.dockSite = null;
-    state.pocketView = null;
-    state.evolution = null;
-    state.colorMode = "mono";
-    state.measureMode = false;
-    state.measureAtoms = [];
-    state.showCoupling = false;
-    state.showDivergence = false;
-    const cm = $("#colorMode");
-    if (cm) cm.value = "mono";
-    const mc = $("#toggleMeasure");
-    if (mc) mc.checked = false;
-    $("#evolutionContent").className = "empty";
-    $("#evolutionContent").textContent = "No conservation analysis yet. Click “Analyze conservation”.";
-
-    renderOverview(data);
-    renderComponents(data.components);
-    updateDockPocket();
-    $("#pocketsContent").className = "empty";
-    $("#pocketsContent").textContent = "No pockets detected yet. Click “Detect pockets”.";
-    initViewer(data.pdb_data);
-    switchTab("overview");
-
-    const ligCount = data.components.filter((c) => c.kind === "ligand").length;
-    setStatus(
-      `Loaded ${pdbId}: ${data.protein_atom_count} protein atoms, ` +
-        `${data.components.length} bound component(s) (${ligCount} ligand-like). ` +
-        `Pick a molecule on the left to profile interactions.`
-    );
+    applyStructure(pdbId, data);
   } catch (err) {
     setStatus(`Could not load ${pdbId}: ${err.message}`, "error");
   } finally {
     $("#loadBtn").disabled = false;
+  }
+}
+
+// Populate state + render from an analyze/upload response. Shared by RCSB loads
+// and local uploads so both paths behave identically.
+function applyStructure(id, data) {
+  state.pdbId = id;
+  state.pdbData = data.pdb_data;
+  state.meta = data.metadata;
+  state.components = data.components;
+  state.chains = data.chains;
+  state.proteinAtomCount = data.protein_atom_count;
+  state.selectedComp = null;
+  state.profile = null;
+  state.report = null;
+  state.dockData = null;
+  state.screen = null;
+  state.dockPose = null;
+  state.methods = null;
+  state.pockets = [];
+  state.dockSite = null;
+  state.pocketView = null;
+  state.evolution = null;
+  state.colorMode = "mono";
+  state.measureMode = false;
+  state.measureAtoms = [];
+  state.showCoupling = false;
+  state.showDivergence = false;
+  const cm = $("#colorMode");
+  if (cm) cm.value = "mono";
+  const mc = $("#toggleMeasure");
+  if (mc) mc.checked = false;
+  $("#evolutionContent").className = "empty";
+  $("#evolutionContent").textContent = "No conservation analysis yet. Click “Analyze conservation”.";
+
+  renderOverview(data);
+  renderComponents(data.components);
+  updateDockPocket();
+  $("#pocketsContent").className = "empty";
+  $("#pocketsContent").textContent = "No pockets detected yet. Click “Detect pockets”.";
+  initViewer(data.pdb_data);
+  switchTab("overview");
+
+  const ligCount = data.components.filter((c) => c.kind === "ligand").length;
+  const label = data.metadata && data.metadata.uploaded ? "Uploaded structure" : id;
+  setStatus(
+    `Loaded ${label}: ${data.protein_atom_count} protein atoms, ` +
+      `${data.components.length} bound component(s) (${ligCount} ligand-like). ` +
+      `Pick a molecule on the left to profile interactions.`
+  );
+}
+
+// Upload a local PDB file and analyze it like any RCSB structure.
+async function uploadStructure(file) {
+  if (!file) return;
+  setStatus(`Uploading and parsing ${file.name}…`, "busy");
+  try {
+    const text = await file.text();
+    const resp = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: text,
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || `HTTP ${resp.status}`);
+    applyStructure(data.upload_id, data);
+  } catch (err) {
+    setStatus(`Could not load ${file.name}: ${err.message}`, "error");
   }
 }
 
@@ -1884,13 +1910,20 @@ function init() {
   $("#pdbInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") smartLoad($("#pdbInput").value);
   });
-  document.querySelectorAll("a.ex").forEach((a) =>
+  document.querySelectorAll(".ex").forEach((a) =>
     a.addEventListener("click", (e) => {
       e.preventDefault();
       $("#pdbInput").value = a.dataset.pdb;
       loadStructure(a.dataset.pdb);
     })
   );
+  const upload = $("#uploadInput");
+  if (upload)
+    upload.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) uploadStructure(file);
+      e.target.value = "";  // allow re-uploading the same filename
+    });
   $("#chemBtn").addEventListener("click", () => lookupChemical($("#chemInput").value));
   $("#chemInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") lookupChemical($("#chemInput").value);

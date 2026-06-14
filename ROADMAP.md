@@ -165,34 +165,40 @@ zero-dependency Windows installs).
 
 ---
 
-## Phase 5 — Accessibility & onboarding (audit priority: MEDIUM, effort S–M)
+## Phase 5 — Accessibility & onboarding (audit priority: MEDIUM, effort S–M) — 🟡 mostly done
 
 Audit: onboarding structure is good, but no help/glossary/examples, and a11y is
 unverified (color reliance, focus, ARIA, keyboard).
 
-- [ ] **Sample/"known-good" walkthroughs** — one-click load of 1HSG / 1CA2 (the
-  README validation cases) as guided examples.
-- [ ] **WCAG pass on `web/`** — visible focus states, ARIA labels on viewer
-  controls, non-color cues for interaction types (the viewer currently leans on
-  color themes + interaction-line color), contrast check on `style.css`.
-- [ ] **Interpretation overlays / glossary** — short "what this means" tooltips
-  for pocket druggability score, conservation score, and relative docking score.
-- [ ] **Responsive/narrow-viewport mode** — collapsible analysis panels; the
-  single-screen layout is desktop-first today.
+- [x] **Sample/"known-good" walkthroughs** — one-click 1HSG / 1CA2 / 4HHB example
+  buttons in the load card.
+- [x] **WCAG pass on `web/` (partial)** — visible `:focus-visible` states, an
+  `aria-live` status region, and labelled inputs. _Remaining:_ full ARIA on the
+  3Dmol viewer controls, non-color interaction cues, and a contrast audit
+  (needs real-browser/AT verification).
+- [~] **Interpretation overlays / glossary** — `title` tooltips on the example
+  buttons; the per-method "what this score means" already lives in the Phase 2
+  provenance cards. A dedicated glossary is still open.
+- [x] **Responsive/narrow-viewport mode** — the layout stacks at ≤ 820 px
+  instead of crowding (collapsible panels remain a future refinement).
+
+_The interactive a11y/responsive changes are additive HTML/CSS validated by
+`node --check` + served markup, but not yet exercised in a real browser / with a
+screen reader._
 
 ---
 
-## Phase 6 — API contract & custom structure upload (audit priority: MEDIUM→LOWER)
+## Phase 6 — API contract & custom structure upload (audit priority: MEDIUM→LOWER) — 🟡 mostly done
 
-- [ ] **Documented API contract** — the JSON endpoints in `server.py` are
-  undocumented. Publish a reference (handwritten OpenAPI/JSON doc, served at
-  `/api/docs`) covering params, limits, and error shapes. Enables scripting and
-  peer audit.
-- [ ] **Custom structure upload** (audit's highest-value, highest-risk item) —
-  accept user-uploaded mmCIF/PDB and AlphaFold/UniProt import. `snaclex/pdbparse.py`
-  already parses PDB text; the work is a validated upload path + size limits +
-  the security scope it expands (untrusted file parsing, storage). Gate behind
-  Phase 1 hardening.
+- [x] **Documented API contract** — `snaclex/apidocs.py` serves a machine-readable
+  contract at `GET /api/docs` (params, bodies, limits, error shapes), rendered
+  at `/api.html` and linked from the footer. Unit-tested for completeness.
+- [x] **Custom structure upload** — `POST /api/upload` takes a validated,
+  size-capped PDB file into a bounded in-memory cache (never written to disk)
+  and returns an upload id usable anywhere a PDB id is (`_norm_id` threads it
+  through analyze/interactions/pockets/docking/screening). Integration-tested.
+  _Remaining:_ mmCIF parsing (currently detected + rejected) and
+  AlphaFold/UniProt import.
 
 ---
 

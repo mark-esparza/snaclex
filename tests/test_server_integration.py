@@ -28,6 +28,11 @@ class TestServerIntegration(unittest.TestCase):
     def tearDownClass(cls):
         cls.httpd.shutdown()
 
+    def setUp(self):
+        # Give each test a fresh rate-limit budget (shared module singletons).
+        server._IP_LIMITER._buckets.clear()
+        server._HEAVY_LIMITER._buckets.clear()
+
     def _get(self, path, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         conn.request("GET", path, headers=headers or {})
@@ -120,6 +125,58 @@ class TestServerIntegration(unittest.TestCase):
     def test_unknown_job_id_404(self):
         resp, _ = self._get("/api/jobs/deadbeef")
         self.assertEqual(resp.status, 404)
+
+    # ---- API docs ----------------------------------------------------
+    def test_api_docs(self):
+        resp, body = self._get("/api/docs")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertIn("endpoints", data)
+        self.assertTrue(any(e["path"] == "/api/upload" for e in data["endpoints"]))
+
+    # ---- structure upload --------------------------------------------
+    def _post_raw(self, path, text, ctype="text/plain"):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", path, body=text, headers={"Content-Type": ctype})
+        resp = conn.getresponse()
+        data = resp.read()
+        conn.close()
+        return resp, data
+
+    def test_upload_and_analyze(self):
+        resp, body = self._post_raw("/api/upload", _SAMPLE_PDB)
+        self.assertEqual(resp.status, 200)
+        up = json.loads(body)
+        self.assertTrue(up["upload_id"].startswith("UL"))
+        self.assertGreaterEqual(up["protein_atom_count"], 10)
+        # The uploaded structure is now loadable by its id like any PDB.
+        resp2, body2 = self._get(f"/api/analyze?pdb={up['upload_id']}")
+        self.assertEqual(resp2.status, 200)
+        self.assertEqual(json.loads(body2)["protein_atom_count"],
+                         up["protein_atom_count"])
+
+    def test_upload_rejects_junk(self):
+        resp, body = self._post_raw("/api/upload", "not a structure at all\n")
+        self.assertEqual(resp.status, 400)
+        self.assertIn("error", json.loads(body))
+
+    def test_upload_rejects_mmcif(self):
+        resp, body = self._post_raw("/api/upload", "data_1ABC\n_atom_site.group_PDB\n")
+        self.assertEqual(resp.status, 400)
+        self.assertIn("mmCIF", json.loads(body)["error"])
+
+
+def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):
+    return (f"{rec:<6}{serial:>5} {name:<4} {res:>3} {chain}{seq:>4}    "
+            f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {el:>2}")
+
+
+# A minimal but column-correct PDB with 12 protein atoms.
+_SAMPLE_PDB = "\n".join(
+    _pdb_line("ATOM", i + 1, el, "LEU", "A", i + 1, float(i), 0.0, 0.0, el)
+    for i, el in enumerate(["N", "C", "C", "O", "C", "C",
+                            "N", "C", "C", "O", "C", "C"])
+) + "\nEND\n"
 
 
 if __name__ == "__main__":
