@@ -8,8 +8,10 @@ header pipeline.
 import http.client
 import json
 import threading
+import time
 import unittest
 from http.server import ThreadingHTTPServer
+from unittest import mock
 
 import server
 
@@ -33,6 +35,16 @@ class TestServerIntegration(unittest.TestCase):
         body = resp.read()
         conn.close()
         return resp, body
+
+    def _post(self, path, payload):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        body = json.dumps(payload)
+        conn.request("POST", path, body=body,
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        data = resp.read()
+        conn.close()
+        return resp, data
 
     def test_version_endpoint(self):
         resp, body = self._get("/api/version")
@@ -63,6 +75,51 @@ class TestServerIntegration(unittest.TestCase):
         resp, body = self._get("/api/analyze")
         self.assertEqual(resp.status, 400)
         self.assertIn("error", json.loads(body))
+
+    # ---- async job queue (stubbed runner, no upstream network) -------
+    def test_job_lifecycle_done(self):
+        with mock.patch.dict(server._JOB_RUNNERS,
+                             {"echo": lambda p: {"got": p}}, clear=False):
+            resp, body = self._post("/api/jobs",
+                                    {"kind": "echo", "params": {"hi": 1}})
+            self.assertEqual(resp.status, 202)
+            job_id = json.loads(body)["job_id"]
+
+            for _ in range(50):
+                r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "done":
+                    self.assertEqual(st["result"], {"got": {"hi": 1}})
+                    break
+                time.sleep(0.02)
+            else:
+                self.fail("job never completed")
+
+    def test_job_error_is_reported(self):
+        def boom(_p):
+            raise ValueError("nope")
+
+        with mock.patch.dict(server._JOB_RUNNERS, {"boom": boom}, clear=False):
+            resp, body = self._post("/api/jobs", {"kind": "boom", "params": {}})
+            job_id = json.loads(body)["job_id"]
+            for _ in range(50):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "error":
+                    self.assertIn("nope", st["error"])
+                    break
+                time.sleep(0.02)
+            else:
+                self.fail("job error never surfaced")
+
+    def test_unknown_job_kind_400(self):
+        resp, body = self._post("/api/jobs", {"kind": "nonsense", "params": {}})
+        self.assertEqual(resp.status, 400)
+        self.assertIn("error", json.loads(body))
+
+    def test_unknown_job_id_404(self):
+        resp, _ = self._get("/api/jobs/deadbeef")
+        self.assertEqual(resp.status, 404)
 
 
 if __name__ == "__main__":

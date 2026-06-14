@@ -89,6 +89,31 @@ async function getJSON(url) {
   return data;
 }
 
+// Submit a long-running analysis (dock/screen) to the async job queue and poll
+// until it finishes, so a slow compute never holds the HTTP connection open.
+// Returns the job's result, or throws with the server's error message.
+async function submitJob(kind, params, { interval = 1000, timeoutMs = 180000 } = {}) {
+  const resp = await fetch("/api/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, params }),
+  });
+  const sub = await resp.json();
+  if (!resp.ok || sub.error) throw new Error(sub.error || `HTTP ${resp.status}`);
+  const id = sub.job_id;
+
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, interval));
+    const r = await fetch(`/api/jobs/${encodeURIComponent(id)}`);
+    const s = await r.json();
+    if (!r.ok) throw new Error(s.error || `HTTP ${r.status}`);
+    if (s.status === "done") return s.result;
+    if (s.status === "error") throw new Error(s.error || "Job failed");
+    if (Date.now() > deadline) throw new Error("Timed out waiting for the job to finish.");
+  }
+}
+
 // ================= structure loading =================
 // One box for everything: a 4-char PDB ID loads directly; anything else
 // is treated as a name and searched against RCSB.
@@ -800,13 +825,9 @@ async function runDock() {
   );
   $("#dockBtn").disabled = true;
   try {
-    const siteParam =
-      state.dockSite.type === "comp"
-        ? `comp=${state.dockSite.index}`
-        : `pocket=${state.dockSite.index}`;
-    const data = await getJSON(
-      `/api/dock?pdb=${state.pdbId}&chem=${encodeURIComponent(chem)}&${siteParam}`
-    );
+    const params = { pdb: state.pdbId, chem };
+    params[state.dockSite.type] = state.dockSite.index;
+    const data = await submitJob("dock", params);
     state.dockPose = { pdb: data.pose_pdb, profile: data.profile, report: data.report };
     state.dockData = data;
     state.dockChem = chem;
@@ -1207,13 +1228,9 @@ async function runScreen() {
   );
   $("#screenBtn").disabled = true;
   try {
-    const siteParam =
-      state.dockSite.type === "comp"
-        ? `comp=${state.dockSite.index}`
-        : `pocket=${state.dockSite.index}`;
-    const data = await getJSON(
-      `/api/screen?pdb=${state.pdbId}&chems=${encodeURIComponent(raw)}&${siteParam}`
-    );
+    const params = { pdb: state.pdbId, chems: raw };
+    params[state.dockSite.type] = state.dockSite.index;
+    const data = await submitJob("screen", params);
     state.screen = data;
     renderScreen(data);
     const ok = data.results.filter((r) => !r.error).length;

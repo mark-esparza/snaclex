@@ -111,26 +111,29 @@ seed, and interaction cutoffs on every dock/screen run. Extend rather than start
 
 ---
 
-## Phase 3 — Async job architecture & caching (audit priority: HIGH, effort M–L)
+## Phase 3 — Async job architecture & caching (audit priority: HIGH, effort M–L) — ✅ done
 
-Today work runs synchronously in the request path; caches are in-memory, bounded
-LRU dicts (`_CACHE`, `_POCKET_CACHE`, `_EVO_CACHE`, `_UNIPROT_CACHE` in
+Previously work ran synchronously in the request path; caches were in-memory,
+bounded LRU dicts (`_CACHE`, `_POCKET_CACHE`, `_EVO_CACHE`, `_UNIPROT_CACHE` in
 `server.py`), lost on restart and not shared across instances.
 
 **Stdlib-first (no new deps):**
-- [ ] **In-process job queue** — convert `/api/dock` and `/api/screen` to a
-  submit→poll pattern: `POST` returns a `job_id`; a stdlib
-  `ThreadPoolExecutor`-backed worker pool runs the job; `GET /api/jobs/{id}`
-  returns status/result. Reuses the concurrency cap from Phase 1c.
-- [ ] **Disk-backed cache** for upstream fetches and derived features (parsed
-  structures, pockets, conservation) so restarts and cold tabs are cheap — a
-  simple keyed JSON/pickle cache directory, TTL'd, stdlib only.
-- [ ] **Precompute the docking grid once per (structure, site)** and reuse across
-  screening ligands — `docking.build_grid` already supports this; cache the grid.
+- [x] **In-process job queue** (`snaclex/jobs.py`) — `/api/dock` and `/api/screen`
+  now go through `POST /api/jobs` → poll `GET /api/jobs/{id}`, run on a bounded
+  `ThreadPoolExecutor`, and are TTL-GC'd. Frontend uses a `submitJob()` helper
+  that hides the polling. A burst queues instead of being rejected with 503.
+- [x] **Disk-backed cache** (`snaclex/cache.py`) — opt-in (`SNACLEX_HTTP_CACHE`,
+  on by default in `render.yaml`) TTL'd, size-bounded cache of upstream
+  responses, wired into `http_util`. Stores opaque bytes only (no pickle),
+  atomic writes — so restarts and repeat lookups are cheap.
+- [x] **Docking grid cached per (structure, site)** (`server._get_grid`) and
+  reused across every ligand in a screen and across repeat docks into the
+  same site.
 
 **Optional heavyweight track:** if `celery`/`redis` are present (env-gated),
-route jobs to external workers instead of the in-process pool. Default deploy
-ignores this path.
+route jobs to external workers instead of the in-process pool. The
+`JobManager` submit/status interface is designed so this can be swapped in
+without touching the handlers. Default deploy ignores this path.
 
 ---
 

@@ -9,15 +9,51 @@ genuine client errors (404 not-found, 400 bad-request) fail fast.
 from __future__ import annotations
 
 import json
+import os
+import threading
 import time
 import urllib.error
 import urllib.request
+
+from . import cache as _cache
 
 DEFAULT_TIMEOUT = 30
 MAX_ATTEMPTS = 4
 _BACKOFF = [0.6, 1.5, 3.0]  # seconds between attempts
 _RETRY_CODES = {408, 429, 500, 502, 503, 504}
 _UA = "SnaCleX/0.1 (research tool; +local)"
+
+# Optional disk cache for GET responses, enabled by pointing SNACLEX_HTTP_CACHE
+# at a writable directory (off by default, so dev/test behavior is unchanged).
+# SNACLEX_HTTP_CACHE_TTL overrides the TTL in seconds.
+_CACHE_LOCK = threading.Lock()
+_CACHE = None
+_CACHE_READY = False
+
+
+def _get_cache():
+    global _CACHE, _CACHE_READY
+    if _CACHE_READY:
+        return _CACHE
+    with _CACHE_LOCK:
+        if not _CACHE_READY:
+            directory = os.environ.get("SNACLEX_HTTP_CACHE")
+            if directory and directory.lower() not in ("0", "off", "false"):
+                ttl = int(os.environ.get("SNACLEX_HTTP_CACHE_TTL") or 86400)
+                try:
+                    _CACHE = _cache.DiskCache(directory, ttl_seconds=ttl)
+                except OSError:
+                    _CACHE = None
+            _CACHE_READY = True
+    return _CACHE
+
+
+def reset_cache():
+    """Drop the cached singleton (used by tests that toggle the env var)."""
+    global _CACHE, _CACHE_READY
+    with _CACHE_LOCK:
+        _CACHE = None
+        _CACHE_READY = False
 
 
 class FetchError(Exception):
@@ -29,7 +65,13 @@ class RateLimitError(FetchError):
 
 
 def _read(url: str, timeout: int) -> bytes:
-    """Fetch a URL with retry/backoff on transient errors."""
+    """Fetch a URL with retry/backoff on transient errors (disk-cached if on)."""
+    cache = _get_cache()
+    if cache is not None:
+        hit = cache.get(url)
+        if hit is not None:
+            return hit
+
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     last: Exception | None = None
     throttled = False
@@ -37,7 +79,10 @@ def _read(url: str, timeout: int) -> bytes:
     for attempt in range(MAX_ATTEMPTS):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return resp.read()
+                data = resp.read()
+            if cache is not None:
+                cache.set(url, data)
+            return data
         except urllib.error.HTTPError as exc:
             last = exc
             if exc.code in (429, 503):

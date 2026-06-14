@@ -5,6 +5,22 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Performance & scaling (Phase 3)
+- **Async job queue** (`snaclex/jobs.py`) — docking and batch screening now run
+  on a bounded `ThreadPoolExecutor` via `POST /api/jobs` → poll
+  `GET /api/jobs/{id}`, instead of blocking the HTTP request. A burst now
+  *queues* behind the worker pool rather than being rejected, and slow computes
+  no longer risk proxy/browser timeouts. Jobs are TTL'd and garbage-collected.
+- **Disk-backed HTTP cache** (`snaclex/cache.py`) — opt-in (`SNACLEX_HTTP_CACHE`)
+  TTL'd, size-bounded cache of upstream (RCSB/PubChem/ChEMBL/Pfam) responses,
+  so repeat lookups are instant and survive restarts. Stores opaque bytes only
+  (no pickling), writes atomically. Enabled by default in `render.yaml`.
+- **Docking-grid cache** — the scoring grid is cached per (structure, site) and
+  reused across every ligand in a screen and across repeat docks into the
+  same site.
+- The frontend submits these via a `submitJob()` helper that hides the polling,
+  so the render code is unchanged.
+
 ### Provenance & reproducibility (Phase 2)
 - **Method-transparency blocks** for pocket detection and conservation
   (`snaclex/provenance.py`) — method family, version, real parameters (pulled
@@ -32,14 +48,14 @@ All notable changes to SnaCleX are documented here. This project adheres to
   that returns `503` with `Retry-After` when saturated. All tunable via env vars.
 - **Input hardening** — free-text query params are NUL/control-char stripped and
   length-capped; batch-screen tokens are individually bounded.
-- **XSS defense-in-depth** — an `esc()` HTML-escaper for upstream-derived values
-  interpolated into the DOM, complementing the CSP.
+- **XSS defense-in-depth** — upstream-derived values interpolated into the DOM
+  are HTML-escaped (`escapeHtml`), complementing the CSP.
 
 ### Added
 - **Privacy & Terms pages** (`web/privacy.html`, `web/terms.html`) linked from a
   new site footer: no accounts/cookies/trackers, what's collected, third-party
   data sources, retention, and the research-only disclaimer.
-- **Test suite** (`tests/`) — 76 stdlib `unittest` cases covering the
+- **Test suite** (`tests/`) — 91 stdlib `unittest` cases covering the
   pure-compute core (`pdbparse`, `interactions`, `docking`, `pockets`,
   `report`) plus the PubChem/RCSB helpers. Runs fully offline; the HTTP fetch
   layer (`http_util`) is exercised via a mock seam (retry/backoff, fast-fail on
@@ -52,7 +68,8 @@ All notable changes to SnaCleX are documented here. This project adheres to
   mapped to the actual codebase and the project's zero-dependency philosophy.
 
 _This covers Phase 0 (engineering hygiene), Phase 1 (security & privacy
-baseline), and Phase 2 (provenance & structured export) of the roadmap._
+baseline), Phase 2 (provenance & structured export), and Phase 3 (async jobs &
+caching) of the roadmap._
 
 ## [0.1.0]
 

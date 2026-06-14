@@ -78,8 +78,11 @@ class TestCleanText(unittest.TestCase):
 
 class TestSecurityConfig(unittest.TestCase):
     def test_expensive_endpoints_listed(self):
-        for ep in ("/api/dock", "/api/screen", "/api/pockets", "/api/evolution"):
+        # Heavy GET endpoints carry the stricter budget; dock/screen now run
+        # through the async job queue (POST /api/jobs) instead.
+        for ep in ("/api/pockets", "/api/evolution"):
             self.assertIn(ep, server.EXPENSIVE_ENDPOINTS)
+        self.assertNotIn("/api/dock", server.EXPENSIVE_ENDPOINTS)
 
     def test_csp_allows_required_sources(self):
         self.assertIn("https://3Dmol.org", server._CSP)
