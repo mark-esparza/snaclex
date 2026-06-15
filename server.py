@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
+import secrets
+import hashlib
 import threading
 import time
 import uuid
@@ -43,6 +46,28 @@ from snaclex import (
 from snaclex.http_util import FetchError
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+
+# ---------------------------------------------------------------------------
+# Logging / observability
+# ---------------------------------------------------------------------------
+log = logging.getLogger("snaclex")
+
+# Client IPs are logged only as a salted hash (the privacy policy says we don't
+# track individuals). The salt is per-process unless pinned via SNACLEX_IP_SALT.
+_IP_SALT = (os.environ.get("SNACLEX_IP_SALT") or secrets.token_hex(8)).encode()
+
+
+def _ip_hash(ip: str) -> str:
+    return hashlib.sha256(_IP_SALT + ip.encode("utf-8", "ignore")).hexdigest()[:12]
+
+
+def configure_logging():
+    level = os.environ.get("SNACLEX_LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, level, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
+    )
 
 # Bounded in-memory cache of parsed structures: pdb_id -> (text, Structure, meta)
 _CACHE: dict[str, tuple] = {}
@@ -702,6 +727,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.client_address[0] if self.client_address else "unknown"
 
     def _send_json(self, payload, status=200, retry_after=None):
+        self._status = status
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -721,8 +747,10 @@ class Handler(BaseHTTPRequestHandler):
         rel = path.lstrip("/")
         full = os.path.normpath(os.path.join(WEB_DIR, rel))
         if not full.startswith(WEB_DIR) or not os.path.isfile(full):
+            self._status = 404
             self.send_error(404, "Not found")
             return
+        self._status = 200
         ext = os.path.splitext(full)[1].lower()
         ctype = _CONTENT_TYPES.get(ext, "application/octet-stream")
         with open(full, "rb") as fh:
@@ -734,12 +762,27 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ---- access logging ----------------------------------------------
+    def _access_log(self, method, path):
+        dur_ms = (time.monotonic() - getattr(self, "_t0", time.monotonic())) * 1000
+        status = getattr(self, "_status", None) or "-"
+        # Job-status polling is high-frequency and low-signal — keep it at DEBUG.
+        level = logging.DEBUG if path.startswith("/api/jobs/") else logging.INFO
+        log.log(level, "%s %s -> %s %.0fms ip=%s",
+                method, path, status, dur_ms, _ip_hash(self._client_ip()))
+
     # ---- routing ------------------------------------------------------
     def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-        qs = parse_qs(parsed.query)
+        self._t0 = time.monotonic()
+        self._status = None
+        path = urlparse(self.path).path
+        try:
+            parsed = urlparse(self.path)
+            self._dispatch_get(parsed.path, parse_qs(parsed.query))
+        finally:
+            self._access_log("GET", path)
 
+    def _dispatch_get(self, path, qs):
         # Job-status polling is cheap and frequent — exempt it from rate limits
         # (job ids are unguessable, so this isn't an abuse vector).
         if path.startswith("/api/jobs/"):
@@ -777,8 +820,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._route(path, qs)
         except FetchError as exc:
             return self._send_error_json(str(exc), status=502)
-        except Exception as exc:  # noqa: BLE001 - surface as JSON for the UI
-            return self._send_error_json(f"Internal error: {exc}", status=500)
+        except Exception:  # noqa: BLE001
+            # Log the traceback server-side; return a generic message to the
+            # client so internal details aren't leaked.
+            log.exception("Unhandled error serving %s", path)
+            return self._send_error_json(
+                "Internal error — please retry.", status=500
+            )
 
     def _route(self, path, qs):
         if path == "/api/analyze":
@@ -805,7 +853,20 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- POST endpoints ----------------------------------------------
     def do_POST(self):
+        self._t0 = time.monotonic()
+        self._status = None
         path = urlparse(self.path).path
+        try:
+            self._dispatch_post(path)
+        except FetchError as exc:
+            self._send_error_json(str(exc), status=502)
+        except Exception:  # noqa: BLE001
+            log.exception("Unhandled error serving POST %s", path)
+            self._send_error_json("Internal error — please retry.", status=500)
+        finally:
+            self._access_log("POST", path)
+
+    def _dispatch_post(self, path):
         if path not in ("/api/jobs", "/api/upload"):
             return self._send_error_json("Not found", status=404)
 
@@ -1044,7 +1105,9 @@ def main():
     parser.add_argument("--host", default=default_host)
     args = parser.parse_args()
 
+    configure_logging()
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+    log.info("SnaCleX v%s listening on %s:%s", SNACLEX_VERSION, args.host, args.port)
     print(f"SnaCleX running at http://{args.host}:{args.port}")
     try:
         httpd.serve_forever()

@@ -12,10 +12,13 @@ manager could be swapped in behind the same submit/status interface.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+
+log = logging.getLogger("snaclex.jobs")
 
 
 class JobManager:
@@ -67,6 +70,7 @@ class JobManager:
             result = fn(*args, **kwargs)
             self._set(job_id, status="done", result=result)
         except Exception as exc:  # noqa: BLE001 - surfaced to the client as job error
+            log.warning("job %s failed: %s", job_id, exc)
             self._set(job_id, status="error", error=str(exc))
 
     def _gc(self):

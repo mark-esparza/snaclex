@@ -5,6 +5,16 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Observability (Phase 7b)
+- **Structured request logging** — every request logs one line to stdout
+  (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,
+  so the public service finally has access logs (Render captures stdout). Client
+  IPs are logged only as a **salted hash** (per the privacy policy); job-status
+  polls are demoted to DEBUG. `SNACLEX_LOG_LEVEL` / `SNACLEX_IP_SALT` tune it.
+- **5xx tracebacks logged server-side**; the client now gets a generic
+  "Internal error — please retry." instead of the raw exception text (closes the
+  audit's info-leak finding). Failed jobs are logged from the worker too.
+
 ### Changed
 - **Product positioning** — reframed the tagline, page title/description, and
   README as *"a reproducible, browser-based structural-biology workbench"* for
