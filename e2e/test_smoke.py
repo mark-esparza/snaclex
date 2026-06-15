@@ -26,7 +26,7 @@ import unittest
 import urllib.request
 
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
     _HAVE_PLAYWRIGHT = True
 except ImportError:  # keep importable (and skippable) without the dev dep
     _HAVE_PLAYWRIGHT = False
@@ -129,20 +129,18 @@ class TestGoldenPath(unittest.TestCase):
 
         page.fill("#pdbInput", TEST_ID)
         page.click("#loadBtn")
-        page.wait_for_function(
-            "document.querySelector('#statusBar').textContent.includes('Loaded')",
-            timeout=15000,
-        )
+        # Use expect() assertions (which poll over the CDP protocol) rather than
+        # wait_for_function — the latter evals a JS string in the page, which the
+        # production Content-Security-Policy correctly blocks (no 'unsafe-eval').
+        expect(page.locator("#statusBar")).to_contain_text("Loaded", timeout=15000)
 
         # A bound molecule (the ligand) should be listed; pick it.
         page.wait_for_selector(".comp", timeout=5000)
         page.locator(".comp").first.click()
 
         # The interactions panel should leave its empty placeholder.
-        page.wait_for_function(
-            "!document.querySelector('#interactionContent')"
-            ".textContent.includes('Select a bound molecule')",
-            timeout=15000,
+        expect(page.locator("#interactionContent")).not_to_contain_text(
+            "Select a bound molecule", timeout=15000
         )
 
         self.assertEqual(errors, [], f"uncaught JS errors: {errors}")
