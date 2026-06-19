@@ -17,6 +17,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import secrets
 import hashlib
 import threading
@@ -31,17 +32,21 @@ from snaclex import __version__ as SNACLEX_VERSION
 from snaclex import (
     apidocs,
     benchmark,
+    bravo,
     chembl,
     docking,
     evolution,
+    hla,
     interactions,
     jobs,
+    models_esm,
     pdbparse,
     pockets,
     provenance,
     pubchem,
     rcsb,
     report,
+    variants,
 )
 from snaclex.http_util import FetchError
 
@@ -129,7 +134,8 @@ _CSP = (
 # Compute-heavy GET endpoints get a tighter per-IP budget plus a global
 # concurrency cap. Docking/screening are no longer here — they run through the
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
-EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution"}
+EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution", "/api/interface",
+                       "/api/nucleic", "/api/hla"}
 
 MAX_QUERY_LEN = 200       # single chemical / search term
 MAX_CHEMS_LEN = 2000      # batch-screening textarea
@@ -690,10 +696,149 @@ def run_benchmark_job(params: dict) -> dict:
     return result
 
 
+def _default_interface_groups(structure):
+    """Heuristic chain grouping: the two smallest chains vs the rest.
+
+    A reasonable zero-config default (e.g. antibody H+L, or a short peptide,
+    against a larger antigen); the user can always override with explicit a/b.
+    """
+    counts: dict[str, int] = {c: 0 for c in structure.chains}
+    for a in structure.protein_atoms:
+        counts[a.chain] = counts.get(a.chain, 0) + 1
+    chains = sorted(counts, key=lambda c: counts[c])
+    if len(chains) < 2:
+        return [], []
+    if len(chains) == 2:
+        return [chains[0]], [chains[1]]
+    return chains[:2], chains[2:]
+
+
+_GENOMIC_RE = re.compile(
+    r"^(?:chr)?([0-9]{1,2}|[XYM]|MT)[:\-]([0-9]+)[:\-]([ACGT]+)[>\-/]([ACGT]+)$",
+    re.IGNORECASE,
+)
+
+
+def _residue_pocket_index(pockets_list):
+    idx = {}
+    for p in pockets_list:
+        for r in p.get("lining_residues", []):
+            idx.setdefault((r["chain"], r["res_seq"]), p["index"])
+    return idx
+
+
+def _residue_conservation(evo):
+    out = {}
+    if evo and evo.get("residues"):
+        for r in evo["residues"]:
+            if r.get("conservation") is not None:
+                out[(r["chain"], r["res_seq"])] = r["conservation"]
+    return out
+
+
+def run_variants_job(params: dict) -> dict:
+    """Map a list of variants onto a structure and annotate them.
+
+    Protein-position input (R273H / p.Arg273His / position) is mapped to
+    residues now; genomic input (chr:pos ref>alt) gets a best-effort TOPMed/BRAVO
+    allele frequency. When the structure is HLA, mapped variants are also
+    classified against the peptide-binding groove. Optional ESM variant-effect
+    scores are attached alongside when a Forge token is configured.
+    """
+    pdb_id = params.get("pdb") or ""
+    raw_variants = params.get("variants") or []
+    acc_override = clean_text(str(params.get("uniprot") or ""), max_len=20)
+    if not pdb_id:
+        raise ValueError("Need 'pdb'")
+    if not isinstance(raw_variants, list) or not raw_variants:
+        raise ValueError("Need a non-empty 'variants' list")
+
+    variant_strs = []
+    for v in raw_variants[:200]:
+        s = clean_text(str(v), max_len=32)
+        if s:
+            variant_strs.append(s)
+
+    # Genomic-format inputs go to the BRAVO frequency path; the rest are treated
+    # as protein-position variants for structural mapping.
+    protein_inputs, genomic = [], []
+    for s in variant_strs:
+        if _GENOMIC_RE.match(s):
+            genomic.append(s)
+        else:
+            protein_inputs.append(s)
+
+    _text, structure, meta = _load_structure(pdb_id)
+    accs = [acc_override] if acc_override else _get_uniprots(pdb_id)
+
+    uniprot_seq, acc_used = "", None
+    for acc in accs:
+        try:
+            seq = variants.fetch_uniprot_sequence(acc)
+        except FetchError:
+            seq = ""
+        if seq:
+            uniprot_seq, acc_used = seq, acc
+            break
+
+    mapping = variants.annotate(structure, protein_inputs, uniprot_seq)
+
+    # Structural context for mapped residues (pocket membership + conservation).
+    pocket_idx = _residue_pocket_index(_get_pockets(pdb_id))
+    try:
+        cons = _residue_conservation(_get_evolution(pdb_id))
+    except FetchError:
+        cons = {}
+    for v in mapping["variants"]:
+        if v.get("mapped"):
+            key = (v["chain"], v["res_seq"])
+            v["pocket"] = pocket_idx.get(key)
+            v["conservation"] = cons.get(key)
+
+    # HLA groove classification (ties variants to the peptide-binding groove).
+    hla_block = None
+    detection = hla.detect(structure, title=meta.get("title"), uniprots=accs)
+    if detection.get("is_hla"):
+        groove = hla.analyze_groove(structure, detection)
+        hla_block = {
+            "detection": detection,
+            "groove": groove,
+            "variant_classes": hla.classify_variants(groove, mapping["variants"]),
+        }
+
+    # TOPMed/BRAVO allele frequencies for genomic-format inputs (best-effort).
+    population = []
+    for s in genomic:
+        m = _GENOMIC_RE.match(s)
+        chrom, pos, ref, alt = m.group(1), m.group(2), m.group(3), m.group(4)
+        freq = bravo.variant_frequency(chrom, pos, ref, alt)
+        if freq.get("available"):
+            freq["rarity"] = bravo.classify_frequency(freq.get("allele_freq"))
+        freq["input"] = s
+        population.append(freq)
+
+    # ESM variant-effect scores alongside (only if a Forge token is set).
+    esm = (models_esm.score_variants(uniprot_seq, protein_inputs)
+           if models_esm.available() and uniprot_seq
+           else {"available": False, "reason": "ESM scoring not enabled (no ESM_API_KEY)"})
+
+    return {
+        "pdb_id": meta.get("pdb_id") or pdb_id,
+        "uniprot": acc_used,
+        "uniprot_candidates": accs,
+        "mapping": mapping,
+        "hla": hla_block,
+        "population": population,
+        "esm": esm,
+        "methods": provenance.variant_methods(),
+    }
+
+
 _JOB_RUNNERS = {
     "dock": run_dock_job,
     "screen": run_screen_job,
     "benchmark": run_benchmark_job,
+    "variants": run_variants_job,
 }
 
 
@@ -833,6 +978,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_analyze(qs)
         if path == "/api/interactions":
             return self._api_interactions(qs)
+        if path == "/api/interface":
+            return self._api_interface(qs)
+        if path == "/api/nucleic":
+            return self._api_nucleic(qs)
+        if path == "/api/hla":
+            return self._api_hla(qs)
+        if path == "/api/hla/cases":
+            return self._send_json({"cases": hla.curated_cases()})
+        if path == "/api/esm":
+            return self._send_json(models_esm.config())
         if path == "/api/chemical":
             return self._api_chemical(qs)
         if path == "/api/pockets":
@@ -969,7 +1124,9 @@ class Handler(BaseHTTPRequestHandler):
             "id": sid,
             "metadata": meta,
             "chains": structure.chains,
+            "nucleic_chains": structure.nucleic_chains,
             "protein_atom_count": len(structure.protein_atoms),
+            "nucleic_atom_count": len(structure.nucleic_atoms),
             "components": _components_json(structure),
             "pdb_data": text,
         })
@@ -1030,6 +1187,66 @@ class Handler(BaseHTTPRequestHandler):
         profile = interactions.profile_component(structure, component)
         summary = report.summarize(profile, meta)
         return self._send_json({"profile": profile, "report": summary})
+
+    def _api_interface(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        a = clean_text((qs.get("a") or [""])[0], max_len=64)
+        b = clean_text((qs.get("b") or [""])[0], max_len=64)
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, meta = _load_structure(pdb_id)
+        chains_a = [c for c in a.split(",") if c] if a else []
+        chains_b = [c for c in b.split(",") if c] if b else []
+        if not chains_a or not chains_b:
+            # Default heuristic: the two shortest chains (e.g. antibody H+L) vs
+            # the rest, so the user gets a sensible interface without picking.
+            chains_a, chains_b = _default_interface_groups(structure)
+        if not chains_a or not chains_b:
+            return self._send_error_json(
+                "Need at least two protein chains to define an interface.", status=404
+            )
+        profile = interactions.profile_interface(structure, chains_a, chains_b)
+        return self._send_json({
+            "profile": profile,
+            "metadata": meta,
+            "methods": provenance.interface_methods(),
+        })
+
+    def _api_nucleic(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        chain = clean_text((qs.get("chain") or [""])[0], max_len=8) or None
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, meta = _load_structure(pdb_id)
+        if not structure.nucleic_atoms:
+            return self._send_json({
+                "profile": None,
+                "metadata": meta,
+                "available": False,
+                "reason": "No nucleic-acid (DNA/RNA) chains in this structure.",
+            })
+        profile = interactions.profile_nucleic_interface(structure, chain)
+        return self._send_json({
+            "profile": profile,
+            "metadata": meta,
+            "available": True,
+            "methods": provenance.interface_methods(),
+        })
+
+    def _api_hla(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, meta = _load_structure(pdb_id)
+        uniprots = _get_uniprots(pdb_id)
+        detection = hla.detect(structure, title=meta.get("title"), uniprots=uniprots)
+        groove = hla.analyze_groove(structure, detection) if detection["is_hla"] else None
+        return self._send_json({
+            "metadata": meta,
+            "detection": detection,
+            "groove": groove,
+            "methods": provenance.hla_methods(),
+        })
 
     def _api_chemical(self, qs):
         query = clean_text((qs.get("q") or [""])[0])

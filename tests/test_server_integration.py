@@ -270,6 +270,134 @@ class TestServerIntegration(unittest.TestCase):
                 self.fail("benchmark job did not finish")
 
 
+    # ---- interface / nucleic / HLA / esm (mocked structures) ---------
+    def _interface_structure(self):
+        from tests.fixtures import atom, structure
+        prot = [
+            atom("N", 0, 0, 0, name="NH1", res_name="ARG", chain="A", res_seq=10),
+            atom("O", 3.0, 0, 0, name="OD1", res_name="ASP", chain="B", res_seq=20),
+        ]
+        return structure(prot)
+
+    def test_interface_endpoint(self):
+        s = self._interface_structure()
+        meta = {"pdb_id": "IFC1", "title": "complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/interface?pdb=IFC1&a=A&b=B")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertEqual(data["profile"]["mode"], "protein-protein")
+        self.assertGreaterEqual(data["profile"]["counts"]["salt_bridge"], 1)
+        self.assertIn("methods", data)
+
+    def test_nucleic_endpoint(self):
+        from tests.fixtures import atom, structure
+        prot = [atom("N", 0, 0, 0, name="NZ", res_name="LYS", chain="A", res_seq=10)]
+        nuc = [atom("O", 3.0, 0, 0, name="OP1", res_name="DA", chain="B", res_seq=1)]
+        s = structure(prot, nucleic=nuc)
+        meta = {"pdb_id": "NUC1", "title": "protein-DNA"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/nucleic?pdb=NUC1")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["available"])
+        self.assertEqual(data["profile"]["mode"], "protein-nucleic")
+
+    def test_nucleic_endpoint_no_nucleic(self):
+        s = self._interface_structure()
+        meta = {"pdb_id": "NUC2", "title": "no DNA"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/nucleic?pdb=NUC2")
+        self.assertEqual(resp.status, 200)
+        self.assertFalse(json.loads(body)["available"])
+
+    def _hla_structure(self):
+        from tests.fixtures import atom, structure
+        groove = {100, 150}
+        prot = []
+        for i in range(1, 271):
+            if i in groove:
+                continue
+            prot.append(atom("C", 500.0 + i, 0, 0, name="CA", res_name="ALA",
+                             chain="A", res_seq=i))
+        prot.append(atom("N", 3.0, 0, 0, name="N", res_name="GLN", chain="A", res_seq=100))
+        prot.append(atom("O", 3.0, 20, 0, name="OD1", res_name="ASP", chain="A", res_seq=150))
+        for i in range(1, 100):
+            prot.append(atom("C", -500.0 - i, 0, 0, name="CA", res_name="ALA",
+                             chain="B", res_seq=i))
+        pep = {2: (0.0, 0.0, 0.0), 9: (0.0, 20.0, 0.0)}
+        for i in range(1, 10):
+            x, y, z = pep.get(i, (100.0, 100.0 + i, 0.0))
+            prot.append(atom("O", x, y, z, name="O", res_name="GLY", chain="C", res_seq=i))
+        return structure(prot)
+
+    def test_hla_endpoint(self):
+        s = self._hla_structure()
+        meta = {"pdb_id": "HLA1", "title": "HLA-A*02:01 complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_get_uniprots", return_value=[]):
+            resp, body = self._get("/api/hla?pdb=HLA1")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["detection"]["is_hla"])
+        self.assertEqual(data["detection"]["mhc_class"], "I")
+        self.assertTrue(data["groove"]["available"])
+        self.assertEqual(data["groove"]["anchor_peptide_positions"], [2, 9])
+
+    def test_hla_cases_endpoint(self):
+        resp, body = self._get("/api/hla/cases")
+        self.assertEqual(resp.status, 200)
+        cases = json.loads(body)["cases"]
+        self.assertTrue(any(c["allele"].startswith("HLA-B*57") for c in cases))
+
+    def test_esm_status_endpoint(self):
+        resp, body = self._get("/api/esm")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertIn("available", data)
+        self.assertIn("fold_model", data)
+
+    def _seq_structure(self):
+        from tests.fixtures import atom, structure
+        three = {"A": "ALA", "C": "CYS", "D": "ASP", "E": "GLU", "F": "PHE",
+                 "G": "GLY", "H": "HIS", "I": "ILE", "K": "LYS", "L": "LEU"}
+        seq = "ACDEFGHIKL"
+        prot = [atom("C", float(i), 0, 0, name="CA", res_name=three[a],
+                     chain="A", res_seq=i + 1) for i, a in enumerate(seq)]
+        return structure(prot)
+
+    def test_variants_job(self):
+        s = self._seq_structure()
+        meta = {"pdb_id": "VAR1", "title": "p53-like"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_get_uniprots", return_value=["P99999"]), \
+             mock.patch.object(server.variants, "fetch_uniprot_sequence",
+                               return_value="ACDEFGHIKL"):
+            resp, body = self._post("/api/jobs", {"kind": "variants",
+                                                  "params": {"pdb": "VAR1",
+                                                             "variants": ["C2D", "K9A"]}})
+            self.assertEqual(resp.status, 202)
+            job_id = json.loads(body)["job_id"]
+            for _ in range(200):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "done":
+                    res = st["result"]
+                    self.assertEqual(res["mapping"]["mapped_count"], 2)
+                    self.assertFalse(res["esm"]["available"])
+                    break
+                if st["status"] == "error":
+                    self.fail(f"variants job errored: {st['error']}")
+                time.sleep(0.05)
+            else:
+                self.fail("variants job did not finish")
+
+
 def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):
     return (f"{rec:<6}{serial:>5} {name:<4} {res:>3} {chain}{seq:>4}    "
             f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {el:>2}")
