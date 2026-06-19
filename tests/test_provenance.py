@@ -33,10 +33,24 @@ class TestProvenance(unittest.TestCase):
             m["parameters"]["max_alignment_sequences"], evolution.MAX_ALIGN_SEQS
         )
 
+    def test_new_method_blocks_shape(self):
+        for fn in (provenance.interface_methods, provenance.variant_methods,
+                   provenance.hla_methods, provenance.esm_methods):
+            m = fn()
+            for key in ("tool", "method", "method_family", "parameters",
+                        "interpretation", "limitations", "disclaimer"):
+                self.assertIn(key, m)
+            self.assertTrue(m["limitations"])
+            self.assertIn("Research-only", m["disclaimer"])
+
     def test_blocks_are_json_serializable(self):
         # They are embedded directly in API JSON responses.
         json.dumps(provenance.pocket_methods())
         json.dumps(provenance.evolution_methods())
+        json.dumps(provenance.interface_methods())
+        json.dumps(provenance.variant_methods())
+        json.dumps(provenance.hla_methods())
+        json.dumps(provenance.esm_methods())
 
 
 if __name__ == "__main__":
