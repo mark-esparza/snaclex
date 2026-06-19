@@ -5,6 +5,34 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added — nucleic acids, interfaces, variants & HLA
+- **Nucleic-acid analysis** — the parser now classifies DNA/RNA residues
+  (`Structure.nucleic_atoms`/`nucleic_chains`) instead of dropping them, and
+  `interactions.profile_nucleic_interface` profiles protein–DNA/RNA contacts
+  (phosphate salt bridges, base/backbone H-bonds, base stacking, hydrophobic).
+  Exposed at `GET /api/nucleic` and in the new **Interface** tab.
+- **Protein–protein / peptide interfaces** — `interactions.profile_interface`
+  maps contacts between two chain groups (antibody–antigen epitope/paratope, and
+  the substrate for HLA peptide–groove analysis). `GET /api/interface`.
+- **Variant overlay** — `snaclex/variants.py` maps protein-position variants
+  (`R273H`, `p.Arg273His`, bare positions) onto residues by aligning the UniProt
+  canonical sequence to the structure, with pocket / conservation context. The
+  async `variants` job adds HLA-groove classification and TOPMed/BRAVO allele
+  frequency (`snaclex/bravo.py`, public aggregate frequencies only) for genomic
+  inputs. New **Variants** tab.
+- **HLA module** (`snaclex/hla.py`) — detects HLA/MHC class I/II complexes,
+  derives the peptide-binding groove and class-I anchor pockets (B/F), and
+  classifies variants as anchor-pocket / groove-lining / peripheral. `GET
+  /api/hla` (+ `/api/hla/cases`) and a new **HLA** tab. Structural interpretation
+  only — not affinity/immunogenicity prediction or HLA typing.
+- **Optional ESM model layer** (`snaclex/models_esm.py`, env-gated `ESM_API_KEY`)
+  — EvolutionaryScale Forge ESM3 structure-from-sequence and ESMC variant-effect
+  scoring, surfaced alongside the structural overlay. Off (and the build
+  unaffected) unless a token is configured; `GET /api/esm` reports status.
+- **Provenance & docs** — method-transparency cards for every new analysis and
+  full `/api/docs` coverage. Governance: only public BRAVO aggregate allele
+  frequencies are used; no genotypes / controlled-access data.
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,
