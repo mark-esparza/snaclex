@@ -18,6 +18,16 @@ STANDARD_AA = {
     "MSE", "SEC", "PYL",  # selenomethionine + rare encoded residues
 }
 
+# Standard nucleotide residue names (DNA: DA/DC/DG/DT; RNA: A/C/G/U) plus a few
+# common variants. Nucleotides arrive as ATOM records but are not amino acids, so
+# without this set they were silently dropped from analysis (kept only for display).
+NUCLEOTIDE_RESIDUES = {
+    "DA", "DC", "DG", "DT", "DU", "DI",          # deoxyribonucleotides
+    "A", "C", "G", "U", "I",                       # ribonucleotides
+    "N",                                            # unknown nucleotide
+    "5MC", "5MU", "1MA", "7MG", "2MG", "M2G", "OMC", "OMG", "PSU", "H2U",
+}
+
 # Common biologically relevant metals / monatomic ions seen as HETATM.
 METAL_ELEMENTS = {
     "NA", "K", "MG", "CA", "MN", "FE", "CO", "NI", "CU", "ZN", "MO", "W",
@@ -82,6 +92,8 @@ class Structure:
     protein_atoms: list[Atom]
     components: list[Component]
     chains: list[str]
+    nucleic_atoms: list[Atom] = field(default_factory=list)
+    nucleic_chains: list[str] = field(default_factory=list)
 
     @property
     def ligand_components(self) -> list[Component]:
@@ -167,8 +179,12 @@ def subset_chain(structure: Structure, chain: str) -> Structure:
 
 
 def _assemble(atoms: list[Atom]) -> Structure:
-    """Group a flat atom list into protein atoms, hetero components, and chains."""
+    """Group a flat atom list into protein atoms, nucleic atoms, hetero
+    components, and chains."""
     protein_atoms = [a for a in atoms if not a.is_hetero and a.res_name in STANDARD_AA]
+    nucleic_atoms = [
+        a for a in atoms if not a.is_hetero and a.res_name in NUCLEOTIDE_RESIDUES
+    ]
 
     comp_map: dict[tuple, Component] = {}
     for a in atoms:
@@ -184,6 +200,7 @@ def _assemble(atoms: list[Atom]) -> Structure:
         comp.atoms.append(a)
 
     chains = sorted({a.chain for a in protein_atoms})
+    nucleic_chains = sorted({a.chain for a in nucleic_atoms})
     components = sorted(
         comp_map.values(), key=lambda c: (c.chain, c.res_seq, c.res_name)
     )
@@ -192,6 +209,8 @@ def _assemble(atoms: list[Atom]) -> Structure:
         protein_atoms=protein_atoms,
         components=components,
         chains=chains,
+        nucleic_atoms=nucleic_atoms,
+        nucleic_chains=nucleic_chains,
     )
 
 

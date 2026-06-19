@@ -71,6 +71,42 @@ class TestParsePdb(unittest.TestCase):
         self.assertEqual(lig.label, "LIG B900")
 
 
+NUCLEIC_PDB = """\
+ATOM      1  N   ALA A  10      11.000  10.000  10.000  1.00 20.00           N
+ATOM      2  CA  ALA A  10      12.000  10.000  10.000  1.00 20.00           C
+ATOM      3  P    DA B   1       5.000   5.000   5.000  1.00 30.00           P
+ATOM      4  OP1  DA B   1       6.000   5.000   5.000  1.00 30.00           O
+ATOM      5  N1   DA B   1       7.000   5.000   5.000  1.00 30.00           N
+ATOM      6  P    DT B   2       8.000   6.000   5.000  1.00 30.00           P
+END
+"""
+
+
+class TestNucleicParsing(unittest.TestCase):
+    def setUp(self):
+        self.s = pdbparse.parse_pdb(NUCLEIC_PDB)
+
+    def test_nucleotides_classified(self):
+        # Two protein atoms (ALA), four nucleic atoms (DA + DT).
+        self.assertEqual(len(self.s.protein_atoms), 2)
+        self.assertEqual(len(self.s.nucleic_atoms), 4)
+
+    def test_nucleic_chains(self):
+        self.assertEqual(self.s.nucleic_chains, ["B"])
+        # Nucleotide chain B is not a protein chain.
+        self.assertEqual(self.s.chains, ["A"])
+
+    def test_nucleotides_not_components(self):
+        # ATOM-record nucleotides must not be treated as hetero ligands.
+        self.assertEqual(self.s.components, [])
+
+    def test_default_structure_has_empty_nucleic(self):
+        # Backward-compatible defaults for code that builds Structure directly.
+        s = pdbparse.Structure(atoms=[], protein_atoms=[], components=[], chains=[])
+        self.assertEqual(s.nucleic_atoms, [])
+        self.assertEqual(s.nucleic_chains, [])
+
+
 class TestParseMmcif(unittest.TestCase):
     def setUp(self):
         from tests.fixtures import mmcif_text
