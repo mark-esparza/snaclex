@@ -143,6 +143,11 @@ class TestGoldenPath(unittest.TestCase):
             "Select a bound molecule", timeout=15000
         )
 
+        # The 3D viewer's self-describing legend renders on load and explains the
+        # visual encoding (verifies renderLegend runs without a JS error).
+        page.click('.tab[data-tab="viewer"]')
+        expect(page.locator("#viewerLegend")).to_contain_text("Protein", timeout=10000)
+
         self.assertEqual(errors, [], f"uncaught JS errors: {errors}")
         page.close()
 

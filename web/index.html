@@ -98,7 +98,12 @@
           <button id="shareView" class="mini">Share view</button>
           <button id="resetView" class="mini">Reset view</button>
         </div>
-        <div id="viewer3d" class="viewer3d"></div>
+        <div id="viewerReadout" class="viewer-readout" aria-live="polite"><span class="muted">Hover the structure to identify atoms — protein, ligand, ion, metal, water or DNA/RNA.</span></div>
+        <div class="viewer-stage">
+          <div id="viewer3d" class="viewer3d"></div>
+          <div id="viewerInfo" class="viewer-info" hidden></div>
+        </div>
+        <div id="viewerLegend" class="viewer-legend"></div>
       </section>
 
       <section class="panel" data-panel="interactions">

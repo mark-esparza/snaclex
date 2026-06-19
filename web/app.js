@@ -17,6 +17,93 @@ const TYPE_LABEL = {
 };
 const WATER = ["HOH", "WAT", "DOD", "H2O", "SOL"];
 
+// Friendly names so the viewer can describe what the user is observing.
+const AA_NAMES = {
+  ALA: "Alanine", ARG: "Arginine", ASN: "Asparagine", ASP: "Aspartate",
+  CYS: "Cysteine", GLN: "Glutamine", GLU: "Glutamate", GLY: "Glycine",
+  HIS: "Histidine", ILE: "Isoleucine", LEU: "Leucine", LYS: "Lysine",
+  MET: "Methionine", PHE: "Phenylalanine", PRO: "Proline", SER: "Serine",
+  THR: "Threonine", TRP: "Tryptophan", TYR: "Tyrosine", VAL: "Valine",
+  MSE: "Selenomethionine", SEC: "Selenocysteine", PYL: "Pyrrolysine",
+};
+const ELEMENT_NAMES = {
+  H: "Hydrogen", C: "Carbon", N: "Nitrogen", O: "Oxygen", P: "Phosphorus",
+  S: "Sulfur", SE: "Selenium", F: "Fluorine", CL: "Chlorine", BR: "Bromine",
+  I: "Iodine", NA: "Sodium", K: "Potassium", MG: "Magnesium", CA: "Calcium",
+  MN: "Manganese", FE: "Iron", CO: "Cobalt", NI: "Nickel", CU: "Copper",
+  ZN: "Zinc", MO: "Molybdenum", CD: "Cadmium", HG: "Mercury", PT: "Platinum",
+  AU: "Gold", AG: "Silver", PB: "Lead", LI: "Lithium", AL: "Aluminium",
+};
+// Mirrors snaclex.pdbparse.NUCLEOTIDE_RESIDUES.
+const NUCLEOTIDES = [
+  "DA", "DC", "DG", "DT", "DU", "DI", "A", "C", "G", "U", "I", "N",
+  "5MC", "5MU", "1MA", "7MG", "2MG", "M2G", "OMC", "OMG", "PSU", "H2U",
+];
+const NUC_NAMES = {
+  DA: "Adenine (DNA)", DC: "Cytosine (DNA)", DG: "Guanine (DNA)",
+  DT: "Thymine (DNA)", DU: "Uracil (DNA)",
+  A: "Adenine (RNA)", C: "Cytosine (RNA)", G: "Guanine (RNA)",
+  U: "Uracil (RNA)", I: "Inosine",
+};
+
+function elementName(el) {
+  if (!el) return "";
+  return ELEMENT_NAMES[String(el).toUpperCase()] || el;
+}
+
+// Classify the atom under the cursor into a molecule category with a friendly
+// one-line description, so the viewer tells the user *what* they are observing.
+function classifyAtom(atom) {
+  const resn = (atom.resn || "").toUpperCase();
+  const chain = atom.chain ? ` · chain ${atom.chain}` : "";
+  const atomBit = atom.atom ? ` · ${atom.atom} (${elementName(atom.elem)})` : "";
+
+  if (atom.model === 1 && state.dockPose) {
+    return { category: "Docked pose", icon: "🎯",
+      title: `Docked pose · ${state.dockPose.label || "ligand"}${atomBit}`,
+      detail: "Predicted (docked) ligand pose — not an experimental position." };
+  }
+  if (WATER.includes(resn)) {
+    return { category: "Water", icon: "💧",
+      title: `Water${chain}`, detail: "Crystallographic water molecule." };
+  }
+  if (!atom.hetflag && NUCLEOTIDES.includes(resn)) {
+    const nm = NUC_NAMES[resn] || resn;
+    return { category: "Nucleic acid", icon: "🧬",
+      title: `Nucleic acid · ${nm} ${atom.resi}${chain}${atomBit}`,
+      detail: "DNA/RNA nucleotide." };
+  }
+  if (!atom.hetflag) {
+    const full = AA_NAMES[resn] || resn;
+    return { category: "Protein residue", icon: "🧬",
+      title: `Protein · ${full} ${atom.resi}${chain}${atomBit}`,
+      detail: "Amino-acid residue in a protein chain." };
+  }
+  // Hetero: use the parsed component's kind/label when we can match it.
+  const comp = (state.components || []).find(
+    (c) => c.chain === atom.chain && c.res_seq === atom.resi
+  );
+  const kind = comp ? comp.kind : null;
+  if (kind === "metal") {
+    return { category: "Metal", icon: "⚙️",
+      title: `Metal ion · ${comp.label || resn}${chain}`,
+      detail: "Metal ion (often catalytic or structural)." };
+  }
+  if (kind === "ion") {
+    return { category: "Ion", icon: "🔶",
+      title: `Ion · ${comp.label || resn}${chain}`,
+      detail: "Monatomic ion." };
+  }
+  if (kind === "ligand") {
+    return { category: "Ligand / chemical", icon: "💊",
+      title: `Ligand · ${comp.label || resn}${chain}${atomBit}`,
+      detail: "Bound small molecule / ligand." };
+  }
+  return { category: "Bound molecule", icon: "•",
+    title: `${resn || "Hetero"} ${atom.resi}${chain}${atomBit}`,
+    detail: "Bound hetero-group." };
+}
+
 // ---------- app state ----------
 const state = {
   pdbId: null,
@@ -239,6 +326,9 @@ function applyStructure(id, data) {
   updateDockPocket();
   $("#pocketsContent").className = "empty";
   $("#pocketsContent").textContent = "No pockets detected yet. Click “Detect pockets”.";
+  const info = $("#viewerInfo");
+  if (info) { info.hidden = true; info.innerHTML = ""; }
+  setReadout("");
   initViewer(data.pdb_data);
   switchTab("overview");
 
@@ -488,8 +578,38 @@ function rebuildScene(resetZoom) {
     v.addSurface($3Dmol.SurfaceType.VDW, { opacity: 0.5, color: "#d0d0d0" }, { model: 0, hetflag: false });
   }
   setupPicking(v);
+  renderLegend();
   if (resetZoom) v.zoomTo();
   v.render();
+}
+
+// Explain the current visual encoding so the user knows what the colors and
+// shapes mean. Rebuilt with the scene so it always matches what's on screen.
+function renderLegend() {
+  const box = $("#viewerLegend");
+  if (!box) return;
+  const sw = (hexNum) => `#${(hexNum || 0).toString(16).padStart(6, "0")}`;
+  const items = [`<span class="lg"><span class="lg-sw" style="background:#b3b3b3"></span>Protein (cartoon)</span>`];
+  if ((state.components || []).length)
+    items.push(`<span class="lg"><span class="lg-sw" style="background:#666"></span>Bound molecule (sticks)</span>`);
+  if (state.nucleicChains && state.nucleicChains.length)
+    items.push(`<span class="lg">🧬 Nucleic acid (chains ${escapeHtml(state.nucleicChains.join(", "))})</span>`);
+  if (state.dockPose)
+    items.push(`<span class="lg"><span class="lg-sw" style="background:#000"></span>Docked pose</span>`);
+  if (state.profile || state.dockPose)
+    ["hydrogen_bond", "salt_bridge", "hydrophobic", "aromatic", "metal_coordination"].forEach((k) =>
+      items.push(`<span class="lg"><span class="lg-sw" style="background:${sw(COLORS[k])}"></span>${TYPE_LABEL[k]}</span>`));
+
+  const mode = state.colorMode || "mono";
+  const modeNote = {
+    conservation: "Colour: conservation (blue variable → red conserved).",
+    bfactor: `Colour: B-factor / flexibility${state._bfactorRange ? ` (${state._bfactorRange[0]}–${state._bfactorRange[1]} Å²; blue rigid → red flexible)` : ""}.`,
+    chain: "Colour: one hue per protein chain.",
+    spectrum: "Colour: rainbow, N → C terminus.",
+    element: "Colour: element (CPK / Jmol).",
+  }[mode] || "";
+  box.innerHTML = `<div class="lg-row">${items.join("")}</div>` +
+    (modeNote ? `<div class="muted lg-mode">${escapeHtml(modeNote)}</div>` : "");
 }
 
 // ================= shareable / reproducible scene state =================
@@ -603,6 +723,81 @@ function atomLabel(atom) {
   return `${resId}${chain} · ${atom.atom} (${atom.elem})`;
 }
 
+// Gather human-readable context for a residue by scanning every analysis the
+// app has already computed, so click/hover share one source of truth.
+function residueContext(chain, resi, hetero, resName) {
+  const notes = [];
+  if (hetero) return notes;
+  const rid = `${chain}/${resName}${resi}`;
+  const here = (rr) => rr.chain === chain && rr.res_seq === resi;
+
+  if (state.evolution && state.evolution.residues) {
+    const r = state.evolution.residues.find(here);
+    if (r && r.conservation != null)
+      notes.push(`Conservation ${r.conservation}` +
+        (r.divergent ? " · diverged from family consensus" : ""));
+  }
+  if ((state.pockets || []).length) {
+    const p = state.pockets.find((pp) => (pp.lining_residues || []).some(here));
+    if (p) notes.push(`Lines pocket #${p.index + 1}`);
+  }
+  if (state.profile && state.profile.contact_residues) {
+    const c = state.profile.contact_residues.find(here);
+    if (c) notes.push(`Contacts ${state.selectedComp ? state.selectedComp.label : "the ligand"} (${c.types.join(", ")})`);
+  }
+  if (state.dockPose && state.dockPose.profile) {
+    const c = (state.dockPose.profile.contact_residues || []).find(here);
+    if (c) notes.push(`Contacts the docked pose (${c.types.join(", ")})`);
+  }
+  if (state.interface && state.interface.profile) {
+    const pr = state.interface.profile;
+    if ((pr.interface_residues_a || []).some(here)) notes.push("Interface · group A (paratope / groove side)");
+    else if ((pr.interface_residues_b || []).some(here)) notes.push("Interface · group B (epitope / peptide side)");
+  }
+  if (state.nucleic && state.nucleic.profile) {
+    if ((state.nucleic.profile.protein_residues || []).some(here)) notes.push("DNA/RNA-binding residue");
+  }
+  if (state.hla && state.hla.groove && state.hla.groove.available) {
+    const g = state.hla.groove;
+    if ((g.anchor_pocket_residue_ids || []).includes(rid)) notes.push("HLA anchor-pocket residue (B/F pocket)");
+    else if ((g.groove_residue_ids || []).includes(rid)) notes.push("HLA groove-lining residue");
+  }
+  if (state.variants && state.variants.mapping) {
+    const vv = (state.variants.mapping.variants || []).find((x) => x.mapped && here(x));
+    if (vv) {
+      let s = `Variant ${vv.input} maps here`;
+      const gc = ((state.variants.hla && state.variants.hla.variant_classes) || [])
+        .find((x) => x.res_id === rid);
+      if (gc) s += ` · ${gc.groove_class}`;
+      notes.push(s);
+    }
+  }
+  return notes;
+}
+
+// Live identity readout in the toolbar — tells the user what they're observing.
+function setReadout(html) {
+  const r = $("#viewerReadout");
+  if (r) r.innerHTML = html || '<span class="muted">Hover the structure to identify atoms.</span>';
+}
+
+// Persistent detail card populated on click.
+function showAtomInfo(info, notes) {
+  const card = $("#viewerInfo");
+  if (!card) return;
+  const noteHtml = notes && notes.length
+    ? `<ul class="vinfo-notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
+    : `<div class="muted">No further analysis context for this residue yet — run Pockets, Evolution, Interface, Variants or HLA to enrich it.</div>`;
+  card.hidden = false;
+  card.innerHTML =
+    `<div class="vinfo-head"><span class="vinfo-cat">${info.icon} ${escapeHtml(info.category)}</span>` +
+    `<button class="mini" id="vinfoClose">✕</button></div>` +
+    `<div class="vinfo-title">${escapeHtml(info.title)}</div>` +
+    `<div class="muted">${escapeHtml(info.detail)}</div>${noteHtml}`;
+  const close = $("#vinfoClose");
+  if (close) close.addEventListener("click", () => { card.hidden = true; });
+}
+
 // Picking: click identifies an atom (or measures distance in Measure mode);
 // hover previews the atom under the cursor.
 function setupPicking(v) {
@@ -612,34 +807,24 @@ function setupPicking(v) {
       v.removeLabel(state._pickLabel);
       state._pickLabel = null;
     }
-    const het = atom.hetflag;
-    const base = atomLabel(atom);
-    const extras = [];
-    if (!het && state.evolution && state.evolution.residues) {
-      const r = state.evolution.residues.find(
-        (x) => x.chain === atom.chain && x.res_seq === atom.resi
-      );
-      if (r && r.conservation != null) extras.push(`conservation ${r.conservation}`);
-    }
-    if (!het && (state.pockets || []).length) {
-      const inPocket = state.pockets.find((p) =>
-        (p.lining_residues || []).some((rr) => rr.chain === atom.chain && rr.res_seq === atom.resi)
-      );
-      if (inPocket) extras.push(`lines pocket #${inPocket.index + 1}`);
-    }
-    const text = extras.length ? `${base}\n${extras.join(" · ")}` : base;
+    const info = classifyAtom(atom);
+    const notes = residueContext(atom.chain, atom.resi, atom.hetflag, (atom.resn || "").toUpperCase());
+    const text = notes.length ? `${info.title}\n${notes.join("\n")}` : info.title;
     state._pickLabel = v.addLabel(text, _labelStyle(atom));
     v.render();
-    setStatus(`Selected ${base}` + (extras.length ? " · " + extras.join(" · ") : ""));
+    showAtomInfo(info, notes);
+    setStatus(`${info.category}: ${info.title}` + (notes.length ? " · " + notes.join(" · ") : ""));
   });
 
-  // Hover preview.
+  // Hover preview — leads with the molecule category so the user knows what
+  // they're looking at, and mirrors it into the toolbar readout.
   v.setHoverable(
     {},
     true,
     (atom) => {
+      const info = classifyAtom(atom);
       if (state._hoverLabel) v.removeLabel(state._hoverLabel);
-      state._hoverLabel = v.addLabel(atomLabel(atom), {
+      state._hoverLabel = v.addLabel(`${info.icon} ${info.title}`, {
         position: { x: atom.x, y: atom.y, z: atom.z },
         backgroundColor: "#222222",
         backgroundOpacity: 0.85,
@@ -647,6 +832,7 @@ function setupPicking(v) {
         fontSize: 11,
         alignment: "bottomCenter",
       });
+      setReadout(`<span class="vread-cat">${info.icon} ${escapeHtml(info.category)}</span> · ${escapeHtml(info.title.replace(/^[^·]*·\s*/, ""))}`);
       v.render();
     },
     () => {
@@ -655,6 +841,7 @@ function setupPicking(v) {
         state._hoverLabel = null;
         v.render();
       }
+      setReadout("");
     }
   );
 }
