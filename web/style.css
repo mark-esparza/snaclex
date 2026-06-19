@@ -384,3 +384,12 @@ select:focus-visible, textarea:focus-visible, .ex:focus-visible,
 .bench-fail { color: #b3261e; font-weight: 600; }
 .bench-res { margin-top: 10px; font-size: 12px; }
 .bench-case { cursor: pointer; }
+
+/* Shared data tables + chips for interface / variants / HLA panels. */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 4px 0 12px; }
+.data-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.data-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.data-table tr[data-focus]:hover { background: var(--soft); }
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0 4px; }
+.chip { background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 9px; font-size: 12px; }
+.examples .ex.hla-case { display: inline-block; }

@@ -37,6 +37,11 @@ const state = {
   dockSite: null,
   pocketView: null,
   evolution: null,
+  nucleicChains: null,
+  interface: null,
+  nucleic: null,
+  variants: null,
+  hla: null,
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -197,6 +202,11 @@ function applyStructure(id, data) {
   state.components = data.components;
   state.chains = data.chains;
   state.proteinAtomCount = data.protein_atom_count;
+  state.nucleicChains = data.nucleic_chains || [];
+  state.interface = null;
+  state.nucleic = null;
+  state.variants = null;
+  state.hla = null;
   state.selectedComp = null;
   state.profile = null;
   state.report = null;
@@ -219,6 +229,10 @@ function applyStructure(id, data) {
   if (mc) mc.checked = false;
   $("#evolutionContent").className = "empty";
   $("#evolutionContent").textContent = "No conservation analysis yet. Click “Analyze conservation”.";
+  ["interfaceContent", "variantContent", "hlaContent"].forEach((id) => {
+    const node = document.getElementById(id);
+    if (node) { node.className = "empty"; node.textContent = "No analysis yet."; }
+  });
 
   renderOverview(data);
   renderComponents(data.components);
@@ -274,6 +288,7 @@ function renderOverview(data) {
       ${cell("Resolution", m.resolution_A ? m.resolution_A + " Å" : "—")}
       ${cell("Released", m.deposited ? m.deposited.slice(0, 10) : "—")}
       ${cell("Protein chains", data.chains ? data.chains.join(", ") : "—")}
+      ${cell("Nucleic chains", data.nucleic_chains && data.nucleic_chains.length ? data.nucleic_chains.join(", ") : "—")}
       ${cell("Protein atoms", data.protein_atom_count)}
       ${cell("Bound components", data.components.length)}
       ${cell("Mol. weight", m.molecular_weight_kDa ? m.molecular_weight_kDa + " kDa" : "—")}
@@ -2025,6 +2040,242 @@ function renderBenchmark(r, label) {
 }
 
 // ================= wiring =================
+// ================= interface / nucleic =================
+function _interfaceResTable(title, rows) {
+  if (!rows || !rows.length) return `<div class="muted">${escapeHtml(title)}: no contact residues.</div>`;
+  const trs = rows
+    .map(
+      (r) =>
+        `<tr data-focus="1" data-chain="${escapeHtml(r.chain)}" data-resi="${r.res_seq}" data-label="${escapeHtml(r.res_id)}">` +
+        `<td>${escapeHtml(r.res_id)}</td><td>${r.total}</td>` +
+        `<td>${escapeHtml((r.types || []).join(", "))}</td><td>${r.min_distance} Å</td></tr>`
+    )
+    .join("");
+  return `<div class="section-h">${escapeHtml(title)}</div>` +
+    `<table class="data-table"><thead><tr><th>Residue</th><th>Contacts</th>` +
+    `<th>Types</th><th>Closest</th></tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function renderInterface(data) {
+  const c = $("#interfaceContent");
+  c.className = "";
+  const p = data.profile;
+  const counts = p.counts || {};
+  const chipRow = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `<span class="chip">${escapeHtml(k.replace(/_/g, " "))}: ${n}</span>`)
+    .join(" ");
+  let head, aTitle, aRows, bTitle, bRows;
+  if (p.mode === "protein-nucleic") {
+    head = `Protein ⇄ nucleic interface · ${p.interaction_total} contacts`;
+    aTitle = "DNA/RNA-binding protein residues"; aRows = p.protein_residues;
+    bTitle = "Contacted nucleotides"; bRows = p.nucleic_residues;
+  } else {
+    head = `Interface ${(p.chains_a || []).join("/")} ⇄ ${(p.chains_b || []).join("/")} · ${p.interaction_total} contacts`;
+    aTitle = `Group A — paratope/groove (${(p.chains_a || []).join(", ")})`; aRows = p.interface_residues_a;
+    bTitle = `Group B — epitope/peptide (${(p.chains_b || []).join(", ")})`; bRows = p.interface_residues_b;
+  }
+  c.innerHTML =
+    `<div class="title-block"><h3>${escapeHtml(head)}</h3></div>` +
+    `<div class="chips">${chipRow || '<span class="muted">No contacts found.</span>'}</div>` +
+    _interfaceResTable(aTitle, aRows) + _interfaceResTable(bTitle, bRows) +
+    provenanceCardHTML(data.methods);
+}
+
+async function profileInterface() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  const clean = (v) => (v || "").trim().toUpperCase().replace(/\s+/g, "");
+  const a = clean($("#ifaceA").value), b = clean($("#ifaceB").value);
+  setStatus("Profiling protein interface…", "busy");
+  $("#interfaceBtn").disabled = true;
+  try {
+    let url = `/api/interface?pdb=${encodeURIComponent(state.pdbId)}`;
+    if (a) url += `&a=${encodeURIComponent(a)}`;
+    if (b) url += `&b=${encodeURIComponent(b)}`;
+    const data = await getJSON(url);
+    state.interface = data;
+    renderInterface(data);
+    setStatus(`Interface profiled: ${data.profile.interaction_total} contacts.`);
+  } catch (err) {
+    setStatus(`Interface analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#interfaceBtn").disabled = false;
+  }
+}
+
+async function profileNucleic() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  setStatus("Profiling protein–nucleic contacts…", "busy");
+  $("#nucleicBtn").disabled = true;
+  const c = $("#interfaceContent");
+  try {
+    const data = await getJSON(`/api/nucleic?pdb=${encodeURIComponent(state.pdbId)}`);
+    if (!data.available) {
+      c.className = "empty";
+      c.textContent = data.reason || "No nucleic-acid chains in this structure.";
+      setStatus(data.reason || "No nucleic acids found.");
+      return;
+    }
+    state.nucleic = data;
+    renderInterface(data);
+    setStatus(`Protein–nucleic interface: ${data.profile.interaction_total} contacts.`);
+  } catch (err) {
+    setStatus(`Nucleic analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#nucleicBtn").disabled = false;
+  }
+}
+
+// ================= variants =================
+function renderVariants(res) {
+  const c = $("#variantContent");
+  c.className = "";
+  const m = res.mapping || {};
+  const hlaClassOf = {};
+  if (res.hla && res.hla.variant_classes)
+    res.hla.variant_classes.forEach((v) => { hlaClassOf[v.res_id] = v.groove_class; });
+  const esmOf = {};
+  if (res.esm && res.esm.available)
+    (res.esm.scored || []).forEach((s) => { if (s.scored) esmOf[s.input] = s; });
+
+  const rows = (m.variants || [])
+    .map((v) => {
+      if (!v.mapped)
+        return `<tr class="muted"><td>${escapeHtml(v.input)}</td>` +
+          `<td colspan="6">unmapped — ${escapeHtml(v.reason || "")}</td></tr>`;
+      const esm = esmOf[v.input];
+      return `<tr data-focus="1" data-chain="${escapeHtml(v.chain)}" data-resi="${v.res_seq}" data-label="${escapeHtml(v.res_id)}">` +
+        `<td>${escapeHtml(v.input)}</td>` +
+        `<td>${escapeHtml(v.res_id)}</td>` +
+        `<td>${v.wt_matches_structure ? "✓" : "⚠ " + escapeHtml(v.structure_aa)}</td>` +
+        `<td>${v.pocket != null ? "pocket " + v.pocket : "—"}</td>` +
+        `<td>${v.conservation != null ? v.conservation.toFixed(2) : "—"}</td>` +
+        `<td>${esm ? esm.llr + " (" + escapeHtml(esm.effect) + ")" : "—"}</td>` +
+        `<td>${hlaClassOf[v.res_id] ? escapeHtml(hlaClassOf[v.res_id]) : "—"}</td></tr>`;
+    })
+    .join("");
+
+  let html = `<div class="title-block"><h3>${m.mapped_count}/${m.input_count} variants mapped</h3>` +
+    (res.uniprot ? `<span class="pdbid">UniProt ${escapeHtml(res.uniprot)}</span>` : "") + `</div>` +
+    `<table class="data-table"><thead><tr><th>Variant</th><th>Residue</th><th>WT</th>` +
+    `<th>Pocket</th><th>Conserv.</th><th>ESM</th><th>HLA groove</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
+
+  if (res.population && res.population.length) {
+    const pr = res.population
+      .map((p) =>
+        `<tr><td>${escapeHtml(p.input)}</td><td>` +
+        (p.available
+          ? `${p.allele_freq != null ? p.allele_freq : "—"} <span class="muted">(${escapeHtml(p.rarity || "")})</span>`
+          : escapeHtml(p.reason || "unavailable")) +
+        `</td></tr>`)
+      .join("");
+    html += `<div class="section-h">TOPMed/BRAVO allele frequency</div>` +
+      `<table class="data-table"><thead><tr><th>Variant</th><th>Frequency</th></tr></thead>` +
+      `<tbody>${pr}</tbody></table>`;
+  }
+  if (res.esm && !res.esm.available)
+    html += `<div class="muted" style="margin-top:8px">ESM variant scoring: ${escapeHtml(res.esm.reason || "unavailable")}.</div>`;
+  html += provenanceCardHTML(res.methods);
+  c.innerHTML = html;
+}
+
+async function runVariants() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  const raw = ($("#variantInput").value || "").split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+  if (!raw.length) { setStatus("Enter at least one variant (e.g. R273H).", "error"); return; }
+  const uni = ($("#variantUniprot").value || "").trim();
+  setStatus(`Mapping ${raw.length} variant(s)…`, "busy");
+  $("#variantBtn").disabled = true;
+  try {
+    const params = { pdb: state.pdbId, variants: raw };
+    if (uni) params.uniprot = uni;
+    const res = await submitJob("variants", params);
+    state.variants = res;
+    renderVariants(res);
+    setStatus(`Mapped ${res.mapping.mapped_count}/${res.mapping.input_count} variant(s).`);
+  } catch (err) {
+    setStatus(`Variant mapping failed: ${err.message}`, "error");
+  } finally {
+    $("#variantBtn").disabled = false;
+  }
+}
+
+// ================= HLA =================
+function renderHla(data) {
+  const c = $("#hlaContent");
+  c.className = "";
+  const d = data.detection || {};
+  if (!d.is_hla) {
+    c.innerHTML = `<div class="empty">Not detected as an HLA/MHC complex.` +
+      (d.signals && d.signals.length ? " Signals: " + escapeHtml(d.signals.join("; ")) : "") + `</div>`;
+    return;
+  }
+  const g = data.groove || {};
+  let html = `<div class="title-block"><h3>HLA class ${escapeHtml(d.mhc_class || "?")} · confidence ${escapeHtml(d.confidence)}</h3></div>`;
+  html += `<div class="chips"><span class="chip">heavy: ${escapeHtml(d.heavy_chain || (d.class2_chains || []).join("/") || "—")}</span>`;
+  if (d.b2m_chain) html += `<span class="chip">β2m: ${escapeHtml(d.b2m_chain)}</span>`;
+  html += `<span class="chip">peptide: ${escapeHtml(d.peptide_chain || "—")}</span></div>`;
+  if (d.signals && d.signals.length) html += `<div class="muted">${escapeHtml(d.signals.join("; "))}</div>`;
+  if (g.available) {
+    const anchorSet = new Set(g.anchor_pocket_residue_ids || []);
+    const rows = (g.groove_residues || [])
+      .map((r) =>
+        `<tr data-focus="1" data-chain="${escapeHtml(r.chain)}" data-resi="${r.res_seq}" data-label="${escapeHtml(r.res_id)}">` +
+        `<td>${escapeHtml(r.res_id)}</td>` +
+        `<td>${anchorSet.has(r.res_id) ? "<b>anchor</b>" : "groove"}</td>` +
+        `<td>${r.total}</td><td>${escapeHtml((r.types || []).join(", "))}</td></tr>`)
+      .join("");
+    html += `<div class="section-h">Groove residues (peptide contacts; anchors = B/F pockets)</div>` +
+      `<p class="muted">Peptide length ${g.peptide_length}` +
+      ((g.anchor_peptide_positions || []).length ? `; anchor positions P${(g.anchor_peptide_positions).join(", P")}.` : ".") + `</p>` +
+      `<table class="data-table"><thead><tr><th>Residue</th><th>Pocket</th><th>Contacts</th>` +
+      `<th>Types</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } else {
+    html += `<div class="muted">${escapeHtml(g.reason || "No groove (peptide not modeled).")}</div>`;
+  }
+  if (state.variants && state.variants.hla && state.variants.hla.variant_classes && state.variants.hla.variant_classes.length)
+    html += `<div class="muted" style="margin-top:8px">Variant→groove classification is shown in the Variants tab.</div>`;
+  else
+    html += `<div class="muted" style="margin-top:8px">Map variants in the Variants tab to classify them against this groove.</div>`;
+  html += provenanceCardHTML(data.methods);
+  c.innerHTML = html;
+}
+
+async function runHla() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  setStatus("Analyzing HLA groove…", "busy");
+  $("#hlaBtn").disabled = true;
+  try {
+    const data = await getJSON(`/api/hla?pdb=${encodeURIComponent(state.pdbId)}`);
+    state.hla = data;
+    renderHla(data);
+    setStatus(data.detection.is_hla ? "HLA groove analyzed." : "Not detected as an HLA/MHC complex.");
+  } catch (err) {
+    setStatus(`HLA analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#hlaBtn").disabled = false;
+  }
+}
+
+async function loadHlaCases() {
+  try {
+    const data = await getJSON("/api/hla/cases");
+    const box = $("#hlaCases");
+    if (!box) return;
+    box.innerHTML = (data.cases || [])
+      .map((cs) =>
+        `<button class="ex hla-case" data-pdb="${escapeHtml(cs.pdb)}" title="${escapeHtml(cs.note)}">` +
+        `${escapeHtml(cs.allele)} <span class="muted">(${escapeHtml(cs.pdb)})</span></button>`)
+      .join(" ");
+    box.querySelectorAll(".hla-case").forEach((b) =>
+      b.addEventListener("click", () => { loadStructure(b.dataset.pdb); switchTab("hla"); }));
+  } catch (err) {
+    const box = $("#hlaCases");
+    if (box) box.textContent = "Could not load curated cases.";
+  }
+}
+
 function init() {
   $("#loadBtn").addEventListener("click", () => smartLoad($("#pdbInput").value));
   $("#pdbInput").addEventListener("keydown", (e) => {
@@ -2053,6 +2304,11 @@ function init() {
   });
   $("#detectBtn").addEventListener("click", detectPockets);
   $("#evoBtn").addEventListener("click", runEvolution);
+  $("#interfaceBtn").addEventListener("click", profileInterface);
+  $("#nucleicBtn").addEventListener("click", profileNucleic);
+  $("#variantBtn").addEventListener("click", runVariants);
+  $("#hlaBtn").addEventListener("click", runHla);
+  loadHlaCases();
   $("#colorMode").addEventListener("change", (e) => {
     const mode = e.target.value;
     if (mode === "conservation" && !state.evolution) {

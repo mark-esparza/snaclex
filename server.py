@@ -1101,7 +1101,9 @@ class Handler(BaseHTTPRequestHandler):
             "upload_id": upload_id,
             "metadata": meta,
             "chains": structure.chains,
+            "nucleic_chains": structure.nucleic_chains,
             "protein_atom_count": len(structure.protein_atoms),
+            "nucleic_atom_count": len(structure.nucleic_atoms),
             "components": _components_json(structure),
             "pdb_data": viewer_text,
         })

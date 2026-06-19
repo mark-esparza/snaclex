@@ -146,6 +146,32 @@ class TestGoldenPath(unittest.TestCase):
         self.assertEqual(errors, [], f"uncaught JS errors: {errors}")
         page.close()
 
+    def test_new_tabs_render_without_js_errors(self):
+        # Drives the Interface / Variants / HLA render paths added for the
+        # nucleic-acid, antibody/antigen and HLA features. The seeded fixture is
+        # a single-chain protein, so these exercise the no-result / not-detected
+        # branches — the point is to catch JS render-path errors in the new code.
+        page = self.browser.new_page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+
+        page.goto(f"http://127.0.0.1:{self.port}/")
+        page.fill("#pdbInput", TEST_ID)
+        page.click("#loadBtn")
+        expect(page.locator("#statusBar")).to_contain_text("Loaded", timeout=15000)
+
+        page.click('.tab[data-tab="interface"]')
+        page.click("#interfaceBtn")
+
+        page.click('.tab[data-tab="hla"]')
+        page.click("#hlaBtn")
+        expect(page.locator("#hlaContent")).to_contain_text("detected", timeout=15000)
+
+        page.click('.tab[data-tab="variants"]')  # just switch + render placeholder
+
+        self.assertEqual(errors, [], f"uncaught JS errors: {errors}")
+        page.close()
+
 
 if __name__ == "__main__":
     unittest.main()
