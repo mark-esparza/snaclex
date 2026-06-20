@@ -205,6 +205,11 @@ button:disabled { opacity: 0.5; cursor: progress; }
 .vinfo-title { font-weight: 600; margin: 4px 0; }
 .vinfo-notes { margin: 8px 0 0; padding-left: 18px; }
 .vinfo-notes li { margin-bottom: 3px; }
+.vinfo-chem { margin: 8px 0; display: grid; gap: 2px; }
+.vinfo-chem .muted { display: inline-block; min-width: 78px; }
+.vinfo-smiles { word-break: break-all; font-family: ui-monospace, monospace; font-size: 11.5px; }
+#vinfoLookup { margin-top: 6px; }
+.comp-code { display: inline-block; margin-left: 4px; padding: 0 5px; font-size: 11px; color: var(--muted); background: var(--soft); border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; }
 
 /* Visual-encoding legend below the viewer. */
 .viewer-legend { margin-top: 10px; font-size: 12px; }

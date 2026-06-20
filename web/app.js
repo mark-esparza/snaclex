@@ -79,24 +79,26 @@ function classifyAtom(atom) {
       title: `Protein · ${full} ${atom.resi}${chain}${atomBit}`,
       detail: "Amino-acid residue in a protein chain." };
   }
-  // Hetero: use the parsed component's kind/label when we can match it.
+  // Hetero: use the parsed component's kind + resolved chemical name when matched.
   const comp = (state.components || []).find(
     (c) => c.chain === atom.chain && c.res_seq === atom.resi
   );
   const kind = comp ? comp.kind : null;
+  // "Imatinib (STI)" when the chemical name resolved, else just the code.
+  const named = comp && comp.chem_name ? `${comp.chem_name} (${resn})` : (resn || "?");
   if (kind === "metal") {
     return { category: "Metal", icon: "⚙️",
-      title: `Metal ion · ${comp.label || resn}${chain}`,
+      title: `Metal ion · ${named}${chain}`,
       detail: "Metal ion (often catalytic or structural)." };
   }
   if (kind === "ion") {
     return { category: "Ion", icon: "🔶",
-      title: `Ion · ${comp.label || resn}${chain}`,
+      title: `Ion · ${named}${chain}`,
       detail: "Monatomic ion." };
   }
   if (kind === "ligand") {
     return { category: "Ligand / chemical", icon: "💊",
-      title: `Ligand · ${comp.label || resn}${chain}${atomBit}`,
+      title: `Ligand · ${named}${chain}${atomBit}`,
       detail: "Bound small molecule / ligand." };
   }
   return { category: "Bound molecule", icon: "•",
@@ -399,11 +401,16 @@ function renderComponents(components) {
   components.forEach((comp) => {
     const row = el("div", "comp");
     row.dataset.index = comp.index;
+    const primary = comp.chem_name
+      ? `${escapeHtml(comp.chem_name)} <span class="comp-code">${escapeHtml(comp.res_name)}</span>`
+      : escapeHtml(comp.res_name);
+    const sub = `${comp.chain}/${comp.res_seq} · ${comp.atom_count} atoms` +
+      (comp.formula ? ` · ${escapeHtml(comp.formula)}` : "");
     row.innerHTML = `
       <span class="tag ${comp.kind}">${comp.kind}</span>
       <div>
-        <div class="comp-label">${comp.res_name}</div>
-        <div class="comp-sub">${comp.chain}/${comp.res_seq} · ${comp.atom_count} atoms</div>
+        <div class="comp-label">${primary}</div>
+        <div class="comp-sub">${sub}</div>
       </div>`;
     row.addEventListener("click", () => selectComponent(comp.index));
     list.appendChild(row);
@@ -781,21 +788,44 @@ function setReadout(html) {
   if (r) r.innerHTML = html || '<span class="muted">Hover the structure to identify atoms.</span>';
 }
 
-// Persistent detail card populated on click.
-function showAtomInfo(info, notes) {
+// Persistent detail card populated on click. `comp` is the matched bound-molecule
+// component (if any), carrying resolved chemical name + chemistry.
+function showAtomInfo(info, notes, comp) {
   const card = $("#viewerInfo");
   if (!card) return;
   const noteHtml = notes && notes.length
     ? `<ul class="vinfo-notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
-    : `<div class="muted">No further analysis context for this residue yet — run Pockets, Evolution, Interface, Variants or HLA to enrich it.</div>`;
+    : "";
+
+  // Chemistry block for ligands/ions/metals (from the RCSB chemical dictionary).
+  let chemHtml = "";
+  if (comp) {
+    const rows = [];
+    if (comp.formula) rows.push(`<div><span class="muted">Formula</span> ${escapeHtml(comp.formula)}</div>`);
+    if (comp.weight) rows.push(`<div><span class="muted">Weight</span> ${escapeHtml(String(comp.weight))} Da</div>`);
+    if (comp.synonyms && comp.synonyms.length) rows.push(`<div><span class="muted">Also known as</span> ${escapeHtml(comp.synonyms.slice(0, 3).join(", "))}</div>`);
+    if (comp.smiles) rows.push(`<div class="vinfo-smiles"><span class="muted">SMILES</span> ${escapeHtml(comp.smiles)}</div>`);
+    const lookupTerm = comp.chem_name || comp.res_name;
+    chemHtml =
+      (rows.length ? `<div class="vinfo-chem">${rows.join("")}</div>` : "") +
+      `<button class="mini" id="vinfoLookup" data-q="${escapeHtml(lookupTerm)}">Look up full chemistry →</button>`;
+  }
+
   card.hidden = false;
   card.innerHTML =
     `<div class="vinfo-head"><span class="vinfo-cat">${info.icon} ${escapeHtml(info.category)}</span>` +
     `<button class="mini" id="vinfoClose">✕</button></div>` +
     `<div class="vinfo-title">${escapeHtml(info.title)}</div>` +
-    `<div class="muted">${escapeHtml(info.detail)}</div>${noteHtml}`;
+    `<div class="muted">${escapeHtml(info.detail)}</div>${noteHtml}${chemHtml}`;
   const close = $("#vinfoClose");
   if (close) close.addEventListener("click", () => { card.hidden = true; });
+  const lookup = $("#vinfoLookup");
+  if (lookup) lookup.addEventListener("click", () => {
+    const q = lookup.dataset.q;
+    $("#chemInput").value = q;
+    switchTab("chemical");
+    lookupChemical(q);
+  });
 }
 
 // Picking: click identifies an atom (or measures distance in Measure mode);
@@ -809,10 +839,13 @@ function setupPicking(v) {
     }
     const info = classifyAtom(atom);
     const notes = residueContext(atom.chain, atom.resi, atom.hetflag, (atom.resn || "").toUpperCase());
+    const comp = atom.hetflag
+      ? (state.components || []).find((c) => c.chain === atom.chain && c.res_seq === atom.resi)
+      : null;
     const text = notes.length ? `${info.title}\n${notes.join("\n")}` : info.title;
     state._pickLabel = v.addLabel(text, _labelStyle(atom));
     v.render();
-    showAtomInfo(info, notes);
+    showAtomInfo(info, notes, comp);
     setStatus(`${info.category}: ${info.title}` + (notes.length ? " · " + notes.join(" · ") : ""));
   });
 
@@ -913,7 +946,8 @@ async function selectComponent(index) {
   document.querySelectorAll(".comp").forEach((r) =>
     r.classList.toggle("active", Number(r.dataset.index) === index)
   );
-  setStatus(`Profiling atomic interactions for ${comp.label}…`, "busy");
+  const compName = comp.chem_name ? `${comp.chem_name} (${comp.res_name})` : comp.label;
+  setStatus(`Profiling atomic interactions for ${compName}…`, "busy");
   try {
     const data = await getJSON(
       `/api/interactions?pdb=${state.pdbId}&comp=${index}`

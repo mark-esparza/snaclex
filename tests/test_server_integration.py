@@ -398,6 +398,38 @@ class TestServerIntegration(unittest.TestCase):
                 self.fail("variants job did not finish")
 
 
+    # ---- component chemical-name enrichment --------------------------
+    def _ligand_structure(self, code):
+        from tests.fixtures import atom, component, structure
+        lig = component(code, [
+            atom("C", 0, 0, 0, hetero=True, res_name=code, chain="B", res_seq=900),
+            atom("N", 1.4, 0, 0, hetero=True, res_name=code, chain="B", res_seq=900),
+        ], chain="B", res_seq=900)
+        prot = [atom("C", 9, 0, 0, name="CA", res_name="ALA", chain="A", res_seq=1)]
+        return structure(prot, [lig])
+
+    def test_components_enriched_with_chem_name(self):
+        s = self._ligand_structure("STI")
+        server._CHEMCOMP_CACHE.clear()
+        ccd = {"STI": {"name": "Imatinib", "formula": "C29 H31 N7 O",
+                       "formula_weight": 493.6, "smiles": "Cc1...", "synonyms": ["Gleevec"]}}
+        with mock.patch.object(server.rcsb, "fetch_chem_components", return_value=ccd):
+            comps = server._components_json(s)
+        sti = next(c for c in comps if c["res_name"] == "STI")
+        self.assertEqual(sti["chem_name"], "Imatinib")
+        self.assertEqual(sti["formula"], "C29 H31 N7 O")
+        self.assertEqual(sti["smiles"], "Cc1...")
+
+    def test_components_graceful_without_ccd(self):
+        s = self._ligand_structure("XYZ")
+        server._CHEMCOMP_CACHE.clear()
+        with mock.patch.object(server.rcsb, "fetch_chem_components", return_value={}):
+            comps = server._components_json(s)
+        xyz = next(c for c in comps if c["res_name"] == "XYZ")
+        self.assertIsNone(xyz["chem_name"])
+        self.assertEqual(xyz["res_name"], "XYZ")  # still present, just unnamed
+
+
 def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):
     return (f"{rec:<6}{serial:>5} {name:<4} {res:>3} {chain}{seq:>4}    "
             f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {el:>2}")

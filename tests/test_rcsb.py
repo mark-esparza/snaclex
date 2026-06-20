@@ -66,5 +66,47 @@ class TestSearchByName(unittest.TestCase):
         self.assertEqual(results[0]["organism"], "Homo sapiens")
 
 
+class TestFetchChemComponents(unittest.TestCase):
+    def test_parses_name_formula_smiles_synonyms(self):
+        fake = {"data": {"chem_comps": [
+            {"chem_comp": {"id": "STI", "name": "Imatinib", "formula": "C29 H31 N7 O",
+                           "formula_weight": 493.6, "type": "non-polymer",
+                           "pdbx_synonyms": "Gleevec; Glivec"},
+             "pdbx_chem_comp_descriptor": [
+                 {"type": "InChI", "descriptor": "InChI=1S/..."},
+                 {"type": "SMILES_CANONICAL", "descriptor": "Cc1ccc(cc1Nc1..."}]},
+        ]}}
+        with mock.patch.object(rcsb, "fetch_json", return_value=fake):
+            out = rcsb.fetch_chem_components(["STI", "sti"])  # dedup/uppercase
+        self.assertIn("STI", out)
+        self.assertEqual(out["STI"]["name"], "Imatinib")
+        self.assertEqual(out["STI"]["formula"], "C29 H31 N7 O")
+        self.assertEqual(out["STI"]["smiles"], "Cc1ccc(cc1Nc1...")  # first SMILES
+        self.assertEqual(out["STI"]["synonyms"], ["Gleevec", "Glivec"])
+
+    def test_empty_for_no_codes(self):
+        self.assertEqual(rcsb.fetch_chem_components([]), {})
+        self.assertEqual(rcsb.fetch_chem_components(["", "  "]), {})
+
+    def test_graceful_on_fetch_error(self):
+        with mock.patch.object(rcsb, "fetch_json", side_effect=FetchError("down")):
+            self.assertEqual(rcsb.fetch_chem_components(["ZN"]), {})
+
+    def test_rest_fallback_when_graphql_empty(self):
+        # GraphQL returns nothing; the per-code REST endpoint resolves the name.
+        def fake(url, **kw):
+            if "graphql" in url:
+                return {"data": {"chem_comps": []}}
+            return {"chem_comp": {"id": "ZN", "name": "ZINC ION", "formula": "Zn 2",
+                                  "formula_weight": 65.4, "type": "non-polymer"},
+                    "rcsb_chem_comp_synonyms": [{"name": "Zn2+"}],
+                    "pdbx_chem_comp_descriptor": [{"type": "SMILES", "descriptor": "[Zn+2]"}]}
+        with mock.patch.object(rcsb, "fetch_json", side_effect=fake):
+            out = rcsb.fetch_chem_components(["ZN"])
+        self.assertEqual(out["ZN"]["name"], "ZINC ION")
+        self.assertEqual(out["ZN"]["smiles"], "[Zn+2]")
+        self.assertEqual(out["ZN"]["synonyms"], ["Zn2+"])
+
+
 if __name__ == "__main__":
     unittest.main()

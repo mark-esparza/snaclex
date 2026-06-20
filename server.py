@@ -466,9 +466,33 @@ def _resolve_dock_site(pdb_id, structure, comp_raw, pocket_raw):
     raise ValueError("Need a docking site ('comp' or 'pocket')")
 
 
+_CHEMCOMP_CACHE: dict[str, dict] = {}
+
+
+def _resolve_chem_components(codes: list[str]) -> dict:
+    """Return {CODE: ccd_info} from the RCSB Chemical Component Dictionary.
+
+    Cached per code; missing/unresolvable codes are cached as ``{}`` so we don't
+    refetch them. Any upstream failure degrades to empty (names just won't show).
+    """
+    want = [c for c in {(c or "").upper() for c in codes} if c and c not in _CHEMCOMP_CACHE]
+    if want:
+        try:
+            fetched = rcsb.fetch_chem_components(want)
+        except FetchError:
+            fetched = {}
+        for code in want:
+            _CHEMCOMP_CACHE[code] = fetched.get(code) or {}
+    return {c.upper(): _CHEMCOMP_CACHE.get(c.upper()) or {} for c in codes}
+
+
 def _components_json(structure) -> list[dict]:
+    # Resolve real chemical names/chemistry for bound components (ligands, ions,
+    # metals) in one batched CCD lookup, so the UI can show "Imatinib" not "STI".
+    ccd = _resolve_chem_components([c.res_name for c in structure.components])
     out = []
     for i, c in enumerate(structure.components):
+        info = ccd.get((c.res_name or "").upper()) or {}
         out.append(
             {
                 "index": i,
@@ -478,6 +502,11 @@ def _components_json(structure) -> list[dict]:
                 "res_seq": c.res_seq,
                 "kind": c.kind,
                 "atom_count": len(c.atoms),
+                "chem_name": info.get("name"),
+                "formula": info.get("formula"),
+                "weight": info.get("formula_weight"),
+                "smiles": info.get("smiles"),
+                "synonyms": info.get("synonyms") or [],
             }
         )
     return out
