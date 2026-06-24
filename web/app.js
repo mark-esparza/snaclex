@@ -1381,10 +1381,91 @@ function buildReportSections() {
     });
   }
 
+  // --- Interface (protein-protein / peptide) ---
+  if (state.interface && state.interface.profile) {
+    const p = state.interface.profile;
+    const top = (rows) => (rows || []).slice(0, 8).map((r) => r.res_id).join(", ") || "—";
+    s.push({
+      title: `Interface — ${(p.chains_a || []).join("/")} ⇄ ${(p.chains_b || []).join("/")}`,
+      rows: Object.entries(p.counts || {}).filter(([, v]) => v).map(([k, v]) => [TYPE_LABEL[k] || k, v]),
+      lines: [
+        `Contacts: ${p.interaction_total} across ${p.interface_residue_count} interface residues`,
+        `Group A (paratope/groove): ${top(p.interface_residues_a)}`,
+        `Group B (epitope/peptide): ${top(p.interface_residues_b)}`,
+      ],
+    });
+  }
+
+  // --- Protein-nucleic interface ---
+  if (state.nucleic && state.nucleic.profile) {
+    const p = state.nucleic.profile;
+    const top = (rows) => (rows || []).slice(0, 8).map((r) => r.res_id).join(", ") || "—";
+    s.push({
+      title: `Protein–nucleic interface (chains ${(p.nucleic_chains || []).join(", ") || "—"})`,
+      rows: Object.entries(p.counts || {}).filter(([, v]) => v).map(([k, v]) => [TYPE_LABEL[k] || k, v]),
+      lines: [
+        `Contacts: ${p.interaction_total}`,
+        `DNA/RNA-binding residues: ${top(p.protein_residues)}`,
+        `Contacted nucleotides: ${top(p.nucleic_residues)}`,
+      ],
+    });
+  }
+
+  // --- Variants ---
+  if (state.variants && state.variants.mapping) {
+    const mp = state.variants.mapping;
+    const hlaClassOf = {};
+    ((state.variants.hla && state.variants.hla.variant_classes) || []).forEach((v) => (hlaClassOf[v.res_id] = v.groove_class));
+    const esmOf = {};
+    if (state.variants.esm && state.variants.esm.available)
+      (state.variants.esm.scored || []).forEach((x) => { if (x.scored) esmOf[x.input] = x; });
+    const rows = (mp.variants || []).map((v) => {
+      if (!v.mapped) return [v.input, "unmapped", "—", "—", "—", "—"];
+      const esm = esmOf[v.input];
+      return [
+        v.input, v.res_id, v.wt_matches_structure ? "✓" : "⚠ " + (v.structure_aa || ""),
+        v.pocket != null ? "pocket " + v.pocket : "—",
+        v.conservation != null ? v.conservation : "—",
+        (esm ? esm.effect : "") + (hlaClassOf[v.res_id] ? (esm ? " · " : "") + hlaClassOf[v.res_id] : "") || "—",
+      ];
+    });
+    const sec = {
+      title: `Variants — ${mp.mapped_count}/${mp.input_count} mapped` + (state.variants.uniprot ? ` (UniProt ${state.variants.uniprot})` : ""),
+      table: { head: ["Variant", "Residue", "WT", "Pocket", "Conserv.", "ESM / HLA"], rows },
+    };
+    s.push(sec);
+    const pop = (state.variants.population || []).filter((p) => p.available);
+    if (pop.length)
+      s.push({
+        title: "TOPMed/BRAVO allele frequency",
+        table: { head: ["Variant", "Allele freq", "Rarity"], rows: pop.map((p) => [p.input, p.allele_freq, p.rarity || "—"]) },
+      });
+  }
+
+  // --- HLA groove ---
+  const hlaData = state.hla || (state.variants && state.variants.hla ? { detection: state.variants.hla.detection, groove: state.variants.hla.groove } : null);
+  if (hlaData && hlaData.detection && hlaData.detection.is_hla) {
+    const d = hlaData.detection, g = hlaData.groove || {};
+    const rows = [
+      ["Class", d.mhc_class || "—"],
+      ["Confidence", d.confidence || "—"],
+      ["Chains", `heavy ${d.heavy_chain || (d.class2_chains || []).join("/") || "—"}` + (d.b2m_chain ? `, β2m ${d.b2m_chain}` : "") + (d.peptide_chain ? `, peptide ${d.peptide_chain}` : "")],
+    ];
+    const lines = [];
+    if (g.available) {
+      lines.push(`Peptide length ${g.peptide_length}; anchor positions P${(g.anchor_peptide_positions || []).join(", P")}`);
+      lines.push("Groove residues: " + (g.groove_residue_ids || []).slice(0, 12).join(", "));
+      if ((g.anchor_pocket_residue_ids || []).length)
+        lines.push("Anchor-pocket residues: " + g.anchor_pocket_residue_ids.join(", "));
+    }
+    const vclasses = (state.variants && state.variants.hla && state.variants.hla.variant_classes) || [];
+    if (vclasses.length)
+      lines.push("Variant→groove: " + vclasses.map((v) => `${v.res_id} ${v.groove_class}`).join("; "));
+    s.push({ title: "HLA peptide-binding groove", rows, lines });
+  }
+
   return s;
 }
-
-// Cross-module synthesis: observations that combine findings.
 function synthesizeFindings() {
   const out = [];
   const e = state.evolution;
@@ -1409,6 +1490,29 @@ function synthesizeFindings() {
     }
     if (d.docking.redock_rmsd != null && d.docking.redock_rmsd <= 2.5)
       out.push(`Redock RMSD ${d.docking.redock_rmsd} Å indicates the docking protocol reproduces the crystallographic pose for this system.`);
+  }
+  // HLA: variants that fall in an anchor pocket are the most consequential.
+  if (state.variants && state.variants.hla && state.variants.hla.variant_classes) {
+    const anchor = state.variants.hla.variant_classes.filter((v) => v.groove_class === "anchor-pocket");
+    const groove = state.variants.hla.variant_classes.filter((v) => v.groove_class === "groove-lining");
+    if (anchor.length) out.push(`Variant(s) ${anchor.map((v) => v.input || v.res_id).join(", ")} fall in an HLA anchor pocket → most likely to alter which peptides the allele presents.`);
+    else if (groove.length) out.push(`Variant(s) ${groove.map((v) => v.input || v.res_id).join(", ")} line the HLA groove → may modulate peptide presentation.`);
+  }
+  // Variants landing in a detected pocket or a ligand-contact residue.
+  if (state.variants && state.variants.mapping) {
+    const inPocket = (state.variants.mapping.variants || []).filter((v) => v.mapped && v.pocket != null);
+    if (inPocket.length) out.push(`Variant(s) ${inPocket.map((v) => v.input).join(", ")} map into a detected pocket → potential functional/binding-site impact.`);
+  }
+  // Interface epitope conservation, when both were run.
+  if (state.interface && state.interface.profile && state.evolution && state.evolution.residues) {
+    const consOf = {};
+    state.evolution.residues.forEach((r) => { if (r.conservation != null) consOf[`${r.chain}/${r.res_seq}`] = r.conservation; });
+    const epi = (state.interface.profile.interface_residues_b || []);
+    const scored = epi.map((r) => consOf[`${r.chain}/${r.res_seq}`]).filter((x) => x != null);
+    if (scored.length >= 3) {
+      const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
+      out.push(`Interface epitope residues are ${mean >= 0.55 ? "largely conserved → a constrained, possibly functional interface" : mean <= 0.35 ? "largely variable → a fast-evolving / specificity-determining interface" : "of mixed conservation"}.`);
+    }
   }
   if (!out.length) out.push("Run more modules (pockets + evolution + docking) to generate cross-analysis synthesis.");
   return out;
@@ -1466,6 +1570,18 @@ function reportLimitations() {
   if (state.screen && (state.screen.results || []).length)
     L.push(
       "Virtual-screen ranking uses a size-dependent raw score; compare per-atom (ligand efficiency) across different-sized molecules, and all docking limitations above apply to every ranked pose."
+    );
+  if ((state.interface && state.interface.profile) || (state.nucleic && state.nucleic.profile))
+    L.push(
+      "Interface mapping is heavy-atom geometry between chain groups (no energetics, no induced fit); chain grouping is heuristic/user-set, and no antibody CDR numbering is applied — it locates contacts, it does not measure binding."
+    );
+  if (state.variants && state.variants.mapping)
+    L.push(
+      "Variant mapping is a structural localization via UniProt→structure alignment, not a pathogenicity call; only modeled residues map, BRAVO frequencies are public aggregate values (no genotypes/controlled data), and ESM scores (when present) are sequence-model predictions, not affinities."
+    );
+  if ((state.hla && state.hla.detection && state.hla.detection.is_hla) || (state.variants && state.variants.hla))
+    L.push(
+      "HLA groove/anchor analysis is structural interpretation only — not peptide-binding-affinity or immunogenicity prediction, and not HLA typing; anchor assignment is class-I-centric (P2 / C-terminus)."
     );
   return L;
 }
@@ -2111,7 +2227,7 @@ function exportSessionJSON() {
   }
   const m = state.meta || {};
   const session = {
-    schema: "snaclex-session/1",
+    schema: "snaclex-session/2",
     tool: "SnaCleX",
     exported_utc: new Date().toISOString(),
     research_only: true,
@@ -2119,7 +2235,9 @@ function exportSessionJSON() {
       pdb_id: m.pdb_id || state.pdbId,
       metadata: state.meta || null,
       chains: state.chains || null,
+      nucleic_chains: state.nucleicChains || null,
       protein_atom_count: state.proteinAtomCount,
+      components: state.components || null,
     },
     interactions: state.profile
       ? { profile: state.profile, report: state.report }
@@ -2132,6 +2250,10 @@ function exportSessionJSON() {
     docking: state.dockData || null,
     screening: state.screen || null,
     chemical: state.chemical || null,
+    interface: state.interface || null,
+    nucleic_interface: state.nucleic || null,
+    variants: state.variants || null,
+    hla: state.hla || null,
   };
   downloadBlob(
     JSON.stringify(session, null, 2),
