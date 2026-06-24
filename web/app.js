@@ -2487,8 +2487,11 @@ function renderVariants(res) {
         return `<tr class="muted"><td>${escapeHtml(v.input)}</td>` +
           `<td colspan="6">unmapped — ${escapeHtml(v.reason || "")}</td></tr>`;
       const esm = esmOf[v.input];
+      const gnote = v.source === "genomic" && v.gene
+        ? ` <span class="muted">${escapeHtml(v.gene)}${v.consequence ? " · " + escapeHtml(v.consequence) : ""}</span>`
+        : "";
       return `<tr data-focus="1" data-chain="${escapeHtml(v.chain)}" data-resi="${v.res_seq}" data-label="${escapeHtml(v.res_id)}">` +
-        `<td>${escapeHtml(v.input)}</td>` +
+        `<td>${escapeHtml(v.input)}${gnote}</td>` +
         `<td>${escapeHtml(v.res_id)}</td>` +
         `<td>${v.wt_matches_structure ? "✓" : "⚠ " + escapeHtml(v.structure_aa)}</td>` +
         `<td>${v.pocket != null ? "pocket " + v.pocket : "—"}</td>` +
@@ -2517,6 +2520,8 @@ function renderVariants(res) {
       `<table class="data-table"><thead><tr><th>Variant</th><th>Frequency</th></tr></thead>` +
       `<tbody>${pr}</tbody></table>`;
   }
+  if (res.population && res.population.length && res.vep_enabled === false)
+    html += `<div class="muted" style="margin-top:8px">Genomic variants show allele frequency only — set <code>SNACLEX_ENABLE_VEP</code> to map them onto structure residues via Ensembl VEP.</div>`;
   if (res.esm && !res.esm.available)
     html += `<div class="muted" style="margin-top:8px">ESM variant scoring: ${escapeHtml(res.esm.reason || "unavailable")}.</div>`;
   html += provenanceCardHTML(res.methods);

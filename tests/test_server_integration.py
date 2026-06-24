@@ -376,6 +376,8 @@ class TestServerIntegration(unittest.TestCase):
         with mock.patch.object(server, "_load_structure",
                                return_value=("ATOMS", s, meta)), \
              mock.patch.object(server, "_get_uniprots", return_value=["P99999"]), \
+             mock.patch.object(server, "_get_pockets", return_value=[]), \
+             mock.patch.object(server, "_get_evolution", return_value={"available": False}), \
              mock.patch.object(server.variants, "fetch_uniprot_sequence",
                                return_value="ACDEFGHIKL"):
             resp, body = self._post("/api/jobs", {"kind": "variants",
@@ -428,6 +430,45 @@ class TestServerIntegration(unittest.TestCase):
         xyz = next(c for c in comps if c["res_name"] == "XYZ")
         self.assertIsNone(xyz["chem_name"])
         self.assertEqual(xyz["res_name"], "XYZ")  # still present, just unnamed
+
+
+    def test_variants_job_genomic_vep_mapping(self):
+        # With VEP enabled+mocked, a genomic SNV resolves to a protein change and
+        # maps onto the structure residue, alongside protein-position inputs.
+        s = self._seq_structure()  # sequence ACDEFGHIKL at residues 1..10
+        meta = {"pdb_id": "VEP1", "title": "p53-like"}
+        cons = {"gene": "TP53", "uniprot": "P04637", "protein_position": 2,
+                "wt_aa": "C", "mut_aa": "D", "consequence": "missense_variant"}
+        with mock.patch.object(server, "_load_structure", return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_get_uniprots", return_value=["P04637"]), \
+             mock.patch.object(server, "_get_pockets", return_value=[]), \
+             mock.patch.object(server, "_get_evolution", return_value={"available": False}), \
+             mock.patch.object(server.variants, "fetch_uniprot_sequence", return_value="ACDEFGHIKL"), \
+             mock.patch.object(server.vep, "available", return_value=True), \
+             mock.patch.object(server.vep, "annotate_one", return_value=cons), \
+             mock.patch.object(server.bravo, "variant_frequency",
+                               return_value={"available": False, "reason": "x"}):
+            resp, body = self._post("/api/jobs", {"kind": "variants",
+                                                  "params": {"pdb": "VEP1",
+                                                             "variants": ["chr17:7676154:G>A"]}})
+            self.assertEqual(resp.status, 202)
+            job_id = json.loads(body)["job_id"]
+            for _ in range(200):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "done":
+                    res = st["result"]
+                    self.assertTrue(res["vep_enabled"])
+                    gv = next(v for v in res["mapping"]["variants"] if v.get("source") == "genomic")
+                    self.assertTrue(gv["mapped"])
+                    self.assertEqual(gv["res_id"], "A/CYS2")
+                    self.assertEqual(gv["gene"], "TP53")
+                    break
+                if st["status"] == "error":
+                    self.fail(f"variants job errored: {st['error']}")
+                time.sleep(0.05)
+            else:
+                self.fail("variants job did not finish")
 
 
 def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):

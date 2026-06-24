@@ -104,8 +104,10 @@ _ENDPOINTS = [
                  "reports pocket recovery, pose RMSD, interactions recovered, and "
                  "physical plausibility. variants: {pdb, variants:[...], uniprot?} — "
                  "maps protein-position variants onto residues (pocket / "
-                 "conservation / HLA-groove context), TOPMed/BRAVO frequency for "
-                 "genomic inputs, and optional ESM scores.",
+                 "conservation / HLA-groove context); genomic inputs (chr:pos ref>alt) "
+                 "get a TOPMed/BRAVO frequency and, when SNACLEX_ENABLE_VEP is set, an "
+                 "Ensembl-VEP protein consequence mapped onto the structure; optional "
+                 "ESM scores when ESM_API_KEY is set.",
     },
     {
         "method": "GET", "path": "/api/benchmark/cases",

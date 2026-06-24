@@ -47,6 +47,7 @@ from snaclex import (
     rcsb,
     report,
     variants,
+    vep,
 )
 from snaclex.http_util import FetchError
 
@@ -812,6 +813,43 @@ def run_variants_job(params: dict) -> dict:
 
     mapping = variants.annotate(structure, protein_inputs, uniprot_seq)
 
+    # Genomic input -> protein consequence (Ensembl VEP, env-gated) -> residue.
+    # Merged into the same variant list so it gets the same enrichment + HLA
+    # classification below. When VEP is off, genomic variants keep only their
+    # BRAVO frequency (added later) without a structural location.
+    if genomic and vep.available():
+        seq_cache = {acc_used: uniprot_seq} if acc_used else {}
+        for s in genomic:
+            m = _GENOMIC_RE.match(s)
+            cons = vep.annotate_one(m.group(1), m.group(2), m.group(3), m.group(4))
+            entry = {"input": s, "source": "genomic"}
+            if not cons:
+                entry.update(mapped=False, reason="no protein-coding consequence (VEP)")
+                mapping["variants"].append(entry)
+                continue
+            entry.update(gene=cons["gene"], consequence=cons["consequence"],
+                         wt=cons["wt_aa"], mut=cons["mut_aa"],
+                         position=cons["protein_position"], uniprot=cons["uniprot"])
+            if cons["uniprot"] not in accs:
+                entry.update(mapped=False,
+                             reason=f"affects {cons['gene'] or cons['uniprot']}, "
+                                    "not this structure's protein")
+                mapping["variants"].append(entry)
+                continue
+            acc = cons["uniprot"]
+            if acc not in seq_cache:
+                try:
+                    seq_cache[acc] = variants.fetch_uniprot_sequence(acc)
+                except FetchError:
+                    seq_cache[acc] = ""
+            sub = f"{cons['wt_aa']}{cons['protein_position']}{cons['mut_aa']}"
+            mapped = variants.annotate(structure, [sub], seq_cache[acc])["variants"][0]
+            mapped.update(input=s, source="genomic", gene=cons["gene"],
+                          consequence=cons["consequence"])
+            mapping["variants"].append(mapped)
+        mapping["input_count"] = len(mapping["variants"])
+        mapping["mapped_count"] = sum(1 for r in mapping["variants"] if r.get("mapped"))
+
     # Structural context for mapped residues (pocket membership + conservation).
     pocket_idx = _residue_pocket_index(_get_pockets(pdb_id))
     try:
@@ -859,6 +897,7 @@ def run_variants_job(params: dict) -> dict:
         "hla": hla_block,
         "population": population,
         "esm": esm,
+        "vep_enabled": vep.available(),
         "methods": provenance.variant_methods(),
     }
 
