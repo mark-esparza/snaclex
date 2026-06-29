@@ -354,6 +354,29 @@ class TestServerIntegration(unittest.TestCase):
         cases = json.loads(body)["cases"]
         self.assertTrue(any(c["allele"].startswith("HLA-B*57") for c in cases))
 
+    def test_expression_endpoint_link_only_when_disabled(self):
+        with mock.patch.object(server.cellxgene, "available", return_value=False):
+            resp, body = self._get("/api/expression?gene=HLA-A")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertIn("gene-expression", data["link"])
+        self.assertFalse(data["available"])
+
+    def test_expression_endpoint_summary_when_enabled(self):
+        fake = {"gene": "HLA-A", "link": "https://x", "available": True,
+                "ensembl_id": "ENSG1", "cell_types": [{"cell_type": "B cell", "mean_expr": 3.1, "pct_cells": 0.8}]}
+        with mock.patch.object(server.cellxgene, "gene_expression", return_value=fake):
+            resp, body = self._get("/api/expression?gene=HLA-A")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["available"])
+        self.assertEqual(data["cell_types"][0]["cell_type"], "B cell")
+
+    def test_expression_endpoint_requires_gene(self):
+        resp, body = self._get("/api/expression")
+        self.assertEqual(resp.status, 400)
+        self.assertIn("error", json.loads(body))
+
     def test_esm_status_endpoint(self):
         resp, body = self._get("/api/esm")
         self.assertEqual(resp.status, 200)

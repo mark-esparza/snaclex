@@ -63,6 +63,12 @@ _ENDPOINTS = [
         "returns": "curated well-known HLA structures (allele, pdb, class, note)",
     },
     {
+        "method": "GET", "path": "/api/expression",
+        "params": {"gene": "gene symbol, e.g. HLA-A (required)"},
+        "returns": "CELL×GENE expression context: a deep link (always) and, when "
+                   "SNACLEX_ENABLE_CELLXGENE is set, the top expressing cell types",
+    },
+    {
         "method": "GET", "path": "/api/esm",
         "params": {},
         "returns": "ESM model-layer config/status (available, fold/score models). "

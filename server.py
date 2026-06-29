@@ -33,6 +33,7 @@ from snaclex import (
     apidocs,
     benchmark,
     bravo,
+    cellxgene,
     chembl,
     docking,
     evolution,
@@ -136,7 +137,7 @@ _CSP = (
 # concurrency cap. Docking/screening are no longer here — they run through the
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
 EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution", "/api/interface",
-                       "/api/nucleic", "/api/hla"}
+                       "/api/nucleic", "/api/hla", "/api/expression"}
 
 MAX_QUERY_LEN = 200       # single chemical / search term
 MAX_CHEMS_LEN = 2000      # batch-screening textarea
@@ -1054,6 +1055,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_hla(qs)
         if path == "/api/hla/cases":
             return self._send_json({"cases": hla.curated_cases()})
+        if path == "/api/expression":
+            return self._api_expression(qs)
         if path == "/api/esm":
             return self._send_json(models_esm.config())
         if path == "/api/chemical":
@@ -1317,6 +1320,19 @@ class Handler(BaseHTTPRequestHandler):
             "groove": groove,
             "methods": provenance.hla_methods(),
         })
+
+    def _api_expression(self, qs):
+        gene = clean_text((qs.get("gene") or [""])[0], max_len=32)
+        if not gene:
+            return self._send_error_json("Missing 'gene' parameter")
+        result = cellxgene.gene_expression(gene)
+        result["note"] = (
+            "Bulk single-cell expression context from CZ CELL×GENE — which cell "
+            "types express this gene across human tissues. Research-only; not "
+            "patient-specific. The summary requires SNACLEX_ENABLE_CELLXGENE; the "
+            "deep link is always available."
+        )
+        return self._send_json(result)
 
     def _api_chemical(self, qs):
         query = clean_text((qs.get("q") or [""])[0])

@@ -84,6 +84,10 @@ def detect(structure, title: str | None = None, uniprots=None) -> dict:
     class2 = [c for c, n in lengths.items() if _CLASS2_MIN <= n <= _CLASS2_MAX]
 
     peptide_chain = peptides[0] if peptides else None
+    # HLA gene symbols implied by the mapped UniProt accessions (e.g. HLA-A),
+    # excluding beta-2-microglobulin — used for expression-context lookups.
+    genes = sorted({HLA_UNIPROT[u] for u in (uniprots or [])
+                    if u in HLA_UNIPROT and HLA_UNIPROT[u] != "B2M"})
     result = {
         "is_hla": False,
         "mhc_class": None,
@@ -94,6 +98,7 @@ def detect(structure, title: str | None = None, uniprots=None) -> dict:
         "b2m_chain": None,
         "class2_chains": [],
         "peptide_chain": peptide_chain,
+        "genes": genes,
     }
 
     # Class I: a long heavy chain (+ optionally beta-2-microglobulin).

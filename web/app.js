@@ -2586,8 +2586,42 @@ function renderHla(data) {
     html += `<div class="muted" style="margin-top:8px">Variant→groove classification is shown in the Variants tab.</div>`;
   else
     html += `<div class="muted" style="margin-top:8px">Map variants in the Variants tab to classify them against this groove.</div>`;
+
+  // Expression context (CELL×GENE) for the HLA gene(s).
+  const genes = d.genes || [];
+  if (genes.length) {
+    html += `<div class="section-h">Tissue / cell expression</div>` +
+      `<div class="hint" style="margin-bottom:6px">Which cell types express ${escapeHtml(genes.join(", "))} (CZ CELL×GENE).</div>` +
+      `<button class="mini" id="exprBtn" data-gene="${escapeHtml(genes[0])}">Show expression context →</button>` +
+      `<div id="exprContent"></div>`;
+  }
   html += provenanceCardHTML(data.methods);
   c.innerHTML = html;
+
+  const exprBtn = $("#exprBtn");
+  if (exprBtn) exprBtn.addEventListener("click", () => loadExpression(exprBtn.dataset.gene));
+}
+
+async function loadExpression(gene) {
+  const box = $("#exprContent");
+  if (!box || !gene) return;
+  box.innerHTML = `<span class="muted">Loading expression for ${escapeHtml(gene)}…</span>`;
+  try {
+    const d = await getJSON(`/api/expression?gene=${encodeURIComponent(gene)}`);
+    let h = `<div style="margin-top:6px"><a href="${escapeHtml(d.link)}" target="_blank" rel="noopener">Open ${escapeHtml(gene)} in CELL×GENE Gene Expression ↗</a></div>`;
+    if (d.available && (d.cell_types || []).length) {
+      const rows = d.cell_types.map((ct) =>
+        `<tr><td>${escapeHtml(ct.cell_type)}</td><td>${ct.mean_expr}</td>` +
+        `<td>${ct.pct_cells != null ? Math.round(ct.pct_cells * 100) + "%" : "—"}</td></tr>`).join("");
+      h += `<table class="data-table" style="margin-top:8px"><thead><tr><th>Cell type</th>` +
+        `<th>Mean expr</th><th>% cells</th></tr></thead><tbody>${rows}</tbody></table>`;
+    } else {
+      h += `<div class="muted" style="margin-top:6px">${escapeHtml(d.reason || "Summary unavailable.")}</div>`;
+    }
+    box.innerHTML = h;
+  } catch (err) {
+    box.innerHTML = `<div class="muted" style="margin-top:6px">Expression lookup failed: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
 async function runHla() {
