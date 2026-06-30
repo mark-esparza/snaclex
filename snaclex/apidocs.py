@@ -39,10 +39,15 @@ _ENDPOINTS = [
         "method": "GET", "path": "/api/interface",
         "params": {"pdb": "structure id (required)",
                    "a": "comma-separated chain ids for group A (optional)",
-                   "b": "comma-separated chain ids for group B (optional)"},
+                   "b": "comma-separated chain ids for group B (optional)",
+                   "heavy": "chain id of the antibody heavy chain for CDR annotation (optional)",
+                   "light": "chain id of the antibody light chain for CDR annotation (optional)",
+                   "scheme": "CDR numbering scheme: kabat (default), imgt, or chothia"},
         "returns": "protein-protein/peptide interface profile (epitope/paratope "
                    "contact residues) + methods/provenance. Defaults to the two "
-                   "smallest chains vs the rest when a/b are omitted.",
+                   "smallest chains vs the rest when a/b are omitted. When heavy/light "
+                   "are given (or auto-detected), paratope residues are annotated with "
+                   "CDR loop labels (H1-H3 / L1-L3) and a cdr_summary is added.",
     },
     {
         "method": "GET", "path": "/api/nucleic",

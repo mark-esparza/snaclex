@@ -1385,6 +1385,16 @@ function buildReportSections() {
   if (state.interface && state.interface.profile) {
     const p = state.interface.profile;
     const top = (rows) => (rows || []).slice(0, 8).map((r) => r.res_id).join(", ") || "—";
+    const cdrLines = [];
+    if (p.has_cdr_annotation) {
+      const ab = p.antibody_chains || {};
+      const scheme = (ab.scheme || "kabat").toUpperCase();
+      cdrLines.push(`CDR annotation (${scheme}): heavy=${ab.heavy || "—"}, light=${ab.light || "—"}`);
+      const cdrTally = Object.entries(p.cdr_summary || {}).sort(([a], [b]) => a.localeCompare(b));
+      if (cdrTally.length)
+        cdrLines.push(`CDR contacts: ${cdrTally.map(([l, n]) => `${l}=${n}`).join(", ")}`);
+      if (p.numbering_note) cdrLines.push(`CDR note: ${p.numbering_note}`);
+    }
     s.push({
       title: `Interface — ${(p.chains_a || []).join("/")} ⇄ ${(p.chains_b || []).join("/")}`,
       rows: Object.entries(p.counts || {}).filter(([, v]) => v).map(([k, v]) => [TYPE_LABEL[k] || k, v]),
@@ -1392,6 +1402,7 @@ function buildReportSections() {
         `Contacts: ${p.interaction_total} across ${p.interface_residue_count} interface residues`,
         `Group A (paratope/groove): ${top(p.interface_residues_a)}`,
         `Group B (epitope/peptide): ${top(p.interface_residues_b)}`,
+        ...cdrLines,
       ],
     });
   }
@@ -1573,7 +1584,7 @@ function reportLimitations() {
     );
   if ((state.interface && state.interface.profile) || (state.nucleic && state.nucleic.profile))
     L.push(
-      "Interface mapping is heavy-atom geometry between chain groups (no energetics, no induced fit); chain grouping is heuristic/user-set, and no antibody CDR numbering is applied — it locates contacts, it does not measure binding."
+      "Interface mapping is heavy-atom geometry between chain groups (no energetics, no induced fit); chain grouping is heuristic/user-set. CDR annotation requires Kabat-compatible residue numbering as deposited — renumber with ANARCI for reliable CDR calls on non-Kabat structures."
     );
   if (state.variants && state.variants.mapping)
     L.push(
@@ -2384,19 +2395,39 @@ function renderBenchmark(r, label) {
 
 // ================= wiring =================
 // ================= interface / nucleic =================
-function _interfaceResTable(title, rows) {
+
+// CDR badge colours (matching the loop mnemonic colour convention).
+const CDR_COLOR = {
+  H1: "#4e79a7", H2: "#f28e2b", H3: "#e15759",
+  L1: "#76b7b2", L2: "#59a14f", L3: "#edc948",
+};
+
+function _cdrBadge(cdr) {
+  if (!cdr) return "";
+  const bg = CDR_COLOR[cdr] || "#888";
+  return ` <span class="cdr-badge" style="background:${bg}">${escapeHtml(cdr)}</span>`;
+}
+
+function _interfaceResTable(title, rows, hasCdr) {
   if (!rows || !rows.length) return `<div class="muted">${escapeHtml(title)}: no contact residues.</div>`;
+  const cdrCol = hasCdr ? "<th>CDR</th>" : "";
   const trs = rows
     .map(
-      (r) =>
-        `<tr data-focus="1" data-chain="${escapeHtml(r.chain)}" data-resi="${r.res_seq}" data-label="${escapeHtml(r.res_id)}">` +
-        `<td>${escapeHtml(r.res_id)}</td><td>${r.total}</td>` +
-        `<td>${escapeHtml((r.types || []).join(", "))}</td><td>${r.min_distance} Å</td></tr>`
+      (r) => {
+        const cdrCell = hasCdr
+          ? `<td>${r.cdr ? _cdrBadge(r.cdr) : '<span class="muted">FR</span>'}</td>`
+          : "";
+        return (
+          `<tr data-focus="1" data-chain="${escapeHtml(r.chain)}" data-resi="${r.res_seq}" data-label="${escapeHtml(r.res_id)}">` +
+          `<td>${escapeHtml(r.res_id)}</td><td>${r.total}</td>` +
+          `<td>${escapeHtml((r.types || []).join(", "))}</td><td>${r.min_distance} Å</td>${cdrCell}</tr>`
+        );
+      }
     )
     .join("");
   return `<div class="section-h">${escapeHtml(title)}</div>` +
     `<table class="data-table"><thead><tr><th>Residue</th><th>Contacts</th>` +
-    `<th>Types</th><th>Closest</th></tr></thead><tbody>${trs}</tbody></table>`;
+    `<th>Types</th><th>Closest</th>${cdrCol}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 function renderInterface(data) {
@@ -2404,6 +2435,7 @@ function renderInterface(data) {
   c.className = "";
   const p = data.profile;
   const counts = p.counts || {};
+  const hasCdr = !!p.has_cdr_annotation;
   const chipRow = Object.entries(counts)
     .filter(([, n]) => n > 0)
     .map(([k, n]) => `<span class="chip">${escapeHtml(k.replace(/_/g, " "))}: ${n}</span>`)
@@ -2418,10 +2450,39 @@ function renderInterface(data) {
     aTitle = `Group A — paratope/groove (${(p.chains_a || []).join(", ")})`; aRows = p.interface_residues_a;
     bTitle = `Group B — epitope/peptide (${(p.chains_b || []).join(", ")})`; bRows = p.interface_residues_b;
   }
+
+  // CDR summary section.
+  let cdrHTML = "";
+  if (hasCdr) {
+    const ab = p.antibody_chains || {};
+    const scheme = (ab.scheme || "kabat").toUpperCase();
+    const schemeLabel = `${scheme} numbering`;
+    const cdrChips = Object.entries(p.cdr_summary || {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([loop, n]) => {
+        const bg = CDR_COLOR[loop] || "#888";
+        return `<span class="chip" style="background:${bg};color:#fff">${escapeHtml(loop)}: ${n} contact${n !== 1 ? "s" : ""}</span>`;
+      })
+      .join(" ");
+    const autoNote = p.antibody_auto_detected
+      ? ' <span class="muted">(chains auto-detected)</span>' : "";
+    const chainNote = [
+      ab.heavy ? `Heavy: ${escapeHtml(ab.heavy)}` : null,
+      ab.light ? `Light: ${escapeHtml(ab.light)}` : null,
+    ].filter(Boolean).join(" · ");
+    cdrHTML = `<div class="cdr-panel">
+      <span class="cdr-scheme-label">${escapeHtml(schemeLabel)}</span>${autoNote}
+      <span class="muted" style="margin-left:8px">${escapeHtml(chainNote)}</span>
+      <div style="margin-top:6px">${cdrChips || '<span class="muted">No CDR contacts in this interface.</span>'}</div>
+      ${p.numbering_note ? `<div class="cdr-warning">${escapeHtml(p.numbering_note)}</div>` : ""}
+    </div>`;
+  }
+
   c.innerHTML =
     `<div class="title-block"><h3>${escapeHtml(head)}</h3></div>` +
     `<div class="chips">${chipRow || '<span class="muted">No contacts found.</span>'}</div>` +
-    _interfaceResTable(aTitle, aRows) + _interfaceResTable(bTitle, bRows) +
+    cdrHTML +
+    _interfaceResTable(aTitle, aRows, hasCdr) + _interfaceResTable(bTitle, bRows, false) +
     provenanceCardHTML(data.methods);
 }
 
@@ -2429,12 +2490,17 @@ async function profileInterface() {
   if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
   const clean = (v) => (v || "").trim().toUpperCase().replace(/\s+/g, "");
   const a = clean($("#ifaceA").value), b = clean($("#ifaceB").value);
+  const heavy = clean($("#ifaceHeavy").value), light = clean($("#ifaceLight").value);
+  const scheme = ($("#ifaceScheme").value || "kabat").toLowerCase();
   setStatus("Profiling protein interface…", "busy");
   $("#interfaceBtn").disabled = true;
   try {
     let url = `/api/interface?pdb=${encodeURIComponent(state.pdbId)}`;
     if (a) url += `&a=${encodeURIComponent(a)}`;
     if (b) url += `&b=${encodeURIComponent(b)}`;
+    if (heavy) url += `&heavy=${encodeURIComponent(heavy)}`;
+    if (light) url += `&light=${encodeURIComponent(light)}`;
+    if (scheme && scheme !== "kabat") url += `&scheme=${encodeURIComponent(scheme)}`;
     const data = await getJSON(url);
     state.interface = data;
     renderInterface(data);

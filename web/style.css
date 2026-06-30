@@ -418,3 +418,20 @@ select:focus-visible, textarea:focus-visible, .ex:focus-visible,
 .chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0 4px; }
 .chip { background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 9px; font-size: 12px; }
 .examples .ex.hla-case { display: inline-block; }
+
+/* ---------- Antibody CDR annotation ---------- */
+.cdr-badge {
+  display: inline-block; color: #fff; font-size: 11px; font-weight: 600;
+  border-radius: 3px; padding: 1px 5px; vertical-align: middle; letter-spacing: 0.3px;
+}
+.cdr-panel {
+  background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 14px; margin: 6px 0 10px; font-size: 12.5px;
+}
+.cdr-scheme-label {
+  font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+}
+.cdr-warning {
+  margin-top: 8px; font-size: 11.5px; color: #b3261e;
+  border-left: 3px solid #b3261e; padding-left: 8px;
+}

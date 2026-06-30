@@ -120,6 +120,18 @@
           <div><label class="field-label">Group B chains (e.g. A)</label><input id="ifaceB" type="text" placeholder="auto" /></div>
           <button id="nucleicBtn">Protein–nucleic (DNA/RNA)</button>
         </div>
+        <div class="dock-row" style="margin-top:6px">
+          <div><label class="field-label">Heavy chain (CDR H1–H3)</label><input id="ifaceHeavy" type="text" placeholder="auto-detect" /></div>
+          <div><label class="field-label">Light chain (CDR L1–L3)</label><input id="ifaceLight" type="text" placeholder="auto-detect" /></div>
+          <div>
+            <label class="field-label">CDR scheme</label>
+            <select id="ifaceScheme">
+              <option value="kabat">Kabat</option>
+              <option value="imgt">IMGT</option>
+              <option value="chothia">Chothia</option>
+            </select>
+          </div>
+        </div>
         <div id="interfaceContent" class="empty">No interface profiled yet.</div>
       </section>
 

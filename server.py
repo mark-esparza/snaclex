@@ -30,6 +30,7 @@ import datetime
 
 from snaclex import __version__ as SNACLEX_VERSION
 from snaclex import (
+    antibody,
     apidocs,
     benchmark,
     bravo,
@@ -1265,6 +1266,9 @@ class Handler(BaseHTTPRequestHandler):
         pdb_id = (qs.get("pdb") or [""])[0]
         a = clean_text((qs.get("a") or [""])[0], max_len=64)
         b = clean_text((qs.get("b") or [""])[0], max_len=64)
+        heavy_ch = clean_text((qs.get("heavy") or [""])[0], max_len=8) or None
+        light_ch = clean_text((qs.get("light") or [""])[0], max_len=8) or None
+        scheme = clean_text((qs.get("scheme") or [""])[0], max_len=16) or "kabat"
         if not pdb_id:
             return self._send_error_json("Missing 'pdb' parameter")
         _text, structure, meta = _load_structure(pdb_id)
@@ -1279,6 +1283,21 @@ class Handler(BaseHTTPRequestHandler):
                 "Need at least two protein chains to define an interface.", status=404
             )
         profile = interactions.profile_interface(structure, chains_a, chains_b)
+
+        # CDR annotation — explicit heavy/light takes priority; fall back to
+        # auto-detection when neither is provided but chains_a looks antibody-like.
+        if heavy_ch or light_ch:
+            profile = antibody.annotate_paratope(profile, heavy_ch, light_ch, scheme)
+        else:
+            det = antibody.detect_vhvl_chains(structure)
+            if det["confidence"] in ("high", "medium") and (det["heavy"] or det["light"]):
+                # Only annotate if the detected chains are actually in chains_a.
+                h = det["heavy"] if det["heavy"] in set(chains_a) else None
+                l = det["light"] if det["light"] in set(chains_a) else None
+                if h or l:
+                    profile = antibody.annotate_paratope(profile, h, l, scheme)
+                    profile["antibody_auto_detected"] = True
+
         return self._send_json({
             "profile": profile,
             "metadata": meta,
