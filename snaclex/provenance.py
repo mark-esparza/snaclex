@@ -127,3 +127,123 @@ def evolution_methods() -> dict:
         ],
         "disclaimer": _RESEARCH_DISCLAIMER,
     }
+
+
+def interface_methods() -> dict:
+    """Provenance for protein-protein / protein-nucleic interface profiling."""
+    return {
+        "tool": tool(),
+        "method": "Geometric heavy-atom interface contact classification",
+        "method_family": "interaction profiling",
+        "parameters": {
+            "hydrogen_bond_max_A": 3.6,
+            "salt_bridge_max_A": 4.0,
+            "hydrophobic_range_A": "2.8-4.0",
+            "ring_stacking_centroid_max_A": 6.0,
+            "engine": "shared spatial grid (same as ligand interaction profiler)",
+        },
+        "interpretation": (
+            "Contacts between two chain groups (antibody-antigen, HLA-peptide) or "
+            "between protein and nucleic-acid chains are classified into H-bonds, "
+            "salt bridges (incl. basic side chain .. DNA/RNA phosphate), hydrophobic "
+            "contacts and ring stacking, then summarized per residue to give an "
+            "epitope/paratope (or protein/nucleic) contact map. It locates the "
+            "interface; it does NOT compute binding energy or affinity."
+        ),
+        "limitations": [
+            "Heavy-atom geometry on one static conformation; no explicit hydrogens, "
+            "no induced fit, no energetics.",
+            "Antibody CDR numbering is not applied (interface residues only).",
+            "Chain grouping is user/heuristic-driven; mis-grouped chains mislead.",
+        ],
+        "disclaimer": _RESEARCH_DISCLAIMER,
+    }
+
+
+def variant_methods() -> dict:
+    """Provenance for variant -> structure-residue mapping."""
+    return {
+        "tool": tool(),
+        "method": "UniProt-to-structure variant localization",
+        "method_family": "variant mapping",
+        "parameters": {
+            "alignment": "Needleman-Wunsch global alignment (UniProt canonical "
+                         "sequence vs structure sequence)",
+            "input": "protein position (R273H / p.Arg273His / bare position); "
+                     "genomic chr:pos ref>alt via Ensembl VEP when enabled",
+            "population_frequency": "TOPMed/BRAVO aggregate allele frequency "
+                                    "(public; genomic path only)",
+        },
+        "interpretation": (
+            "Each variant is placed on a concrete (chain, residue) in the 3D model "
+            "and cross-referenced with pocket / interface / conservation context. "
+            "This is a structural localization, NOT a pathogenicity or clinical call."
+        ),
+        "limitations": [
+            "Only positions modeled in the structure can be mapped; unmodeled "
+            "regions and isoform differences are flagged, not mapped.",
+            "BRAVO frequencies are public aggregates only — never individual "
+            "genotypes or controlled-access data.",
+            "WT/structure mismatches (engineered or alternate isoforms) are flagged "
+            "but not corrected.",
+        ],
+        "disclaimer": _RESEARCH_DISCLAIMER,
+    }
+
+
+def hla_methods() -> dict:
+    """Provenance for HLA peptide-binding-groove analysis."""
+    return {
+        "tool": tool(),
+        "method": "HLA/MHC groove + anchor-pocket structural analysis",
+        "method_family": "immunogenomics (structural)",
+        "parameters": {
+            "detection": "chain composition (heavy + beta-2-microglobulin + short "
+                         "peptide for class I) plus title/UniProt signals",
+            "groove": "HLA residues contacting the bound peptide (interface profiler)",
+            "anchors": "class-I P2 (B-pocket) and C-terminal PΩ (F-pocket)",
+            "variant_classes": ["anchor-pocket", "groove-lining", "peripheral"],
+        },
+        "interpretation": (
+            "Identifies the peptide-binding groove and anchor pockets and classifies "
+            "variants by where they fall, giving a transparent 'likely alters the "
+            "peptide repertoire vs peripheral' read-out. This is STRUCTURAL "
+            "INTERPRETATION ONLY — not peptide-binding-affinity or immunogenicity "
+            "prediction (use NetMHCpan-style tools for that) and not HLA typing."
+        ),
+        "limitations": [
+            "Requires a modeled peptide; apo structures give detection only.",
+            "Anchor assignment is class-I-centric (P2 / C-terminus); class-II "
+            "anchors are not sub-classified.",
+            "Allele-specific repertoire effects are not quantified.",
+        ],
+        "disclaimer": _RESEARCH_DISCLAIMER,
+    }
+
+
+def esm_methods() -> dict:
+    """Provenance for the optional EvolutionaryScale ESM model layer."""
+    return {
+        "tool": tool(),
+        "method": "EvolutionaryScale ESM (Forge): ESM3 fold + ESMC variant scoring",
+        "method_family": "protein language model (external, optional)",
+        "parameters": {
+            "fold_model": "esm3-open (structure from sequence)",
+            "score_model": "esmc-600m (masked-marginal log-likelihood ratio)",
+            "provider": "EvolutionaryScale Forge (requires ESM_API_KEY)",
+        },
+        "interpretation": (
+            "Predicted structures let the structural pipeline run when no "
+            "experimental model exists; variant log-likelihood ratios provide a "
+            "sequence-model 'predictability' signal shown ALONGSIDE the structural "
+            "overlay. Both are model PREDICTIONS, labelled as such."
+        ),
+        "limitations": [
+            "Off unless a Forge token is configured; the default build is "
+            "structural-only and unaffected.",
+            "Predicted structures carry per-region uncertainty and are not "
+            "experimental coordinates.",
+            "Likelihood ratios are not binding-affinity or pathogenicity values.",
+        ],
+        "disclaimer": _RESEARCH_DISCLAIMER,
+    }

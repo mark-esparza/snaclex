@@ -17,6 +17,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import secrets
 import hashlib
 import threading
@@ -29,19 +30,26 @@ import datetime
 
 from snaclex import __version__ as SNACLEX_VERSION
 from snaclex import (
+    antibody,
     apidocs,
     benchmark,
+    bravo,
+    cellxgene,
     chembl,
     docking,
     evolution,
+    hla,
     interactions,
     jobs,
+    models_esm,
     pdbparse,
     pockets,
     provenance,
     pubchem,
     rcsb,
     report,
+    variants,
+    vep,
 )
 from snaclex.http_util import FetchError
 
@@ -129,7 +137,8 @@ _CSP = (
 # Compute-heavy GET endpoints get a tighter per-IP budget plus a global
 # concurrency cap. Docking/screening are no longer here — they run through the
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
-EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution"}
+EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution", "/api/interface",
+                       "/api/nucleic", "/api/hla", "/api/expression"}
 
 MAX_QUERY_LEN = 200       # single chemical / search term
 MAX_CHEMS_LEN = 2000      # batch-screening textarea
@@ -317,18 +326,25 @@ def _get_evolution(pdb_id: str) -> dict | None:
     return evo
 
 
-_UNIPROT_CACHE: dict[str, list] = {}
+_UNIPROT_CACHE: dict[str, tuple] = {}   # pid → (result_list, timestamp)
+_UNIPROT_FAIL_TTL = 300.0               # retry failed lookups after 5 min
 
 
 def _get_uniprots(pdb_id: str) -> list:
     pid = _norm_id(pdb_id)
-    if pid in _UNIPROT_CACHE:
-        return _UNIPROT_CACHE[pid]
+    now = time.monotonic()
+    cached = _UNIPROT_CACHE.get(pid)
+    if cached is not None:
+        result, ts = cached
+        # Successful hits are cached permanently; failures expire after TTL
+        # so a temporary network outage doesn't permanently hide UniProt data.
+        if result or (now - ts) < _UNIPROT_FAIL_TTL:
+            return result
     try:
         accs = rcsb.fetch_uniprot_accessions(pid)
     except FetchError:
         accs = []
-    _UNIPROT_CACHE[pid] = accs
+    _UNIPROT_CACHE[pid] = (accs, now)
     return accs
 
 
@@ -460,9 +476,33 @@ def _resolve_dock_site(pdb_id, structure, comp_raw, pocket_raw):
     raise ValueError("Need a docking site ('comp' or 'pocket')")
 
 
+_CHEMCOMP_CACHE: dict[str, dict] = {}
+
+
+def _resolve_chem_components(codes: list[str]) -> dict:
+    """Return {CODE: ccd_info} from the RCSB Chemical Component Dictionary.
+
+    Cached per code; missing/unresolvable codes are cached as ``{}`` so we don't
+    refetch them. Any upstream failure degrades to empty (names just won't show).
+    """
+    want = [c for c in {(c or "").upper() for c in codes} if c and c not in _CHEMCOMP_CACHE]
+    if want:
+        try:
+            fetched = rcsb.fetch_chem_components(want)
+        except FetchError:
+            fetched = {}
+        for code in want:
+            _CHEMCOMP_CACHE[code] = fetched.get(code) or {}
+    return {c.upper(): _CHEMCOMP_CACHE.get(c.upper()) or {} for c in codes}
+
+
 def _components_json(structure) -> list[dict]:
+    # Resolve real chemical names/chemistry for bound components (ligands, ions,
+    # metals) in one batched CCD lookup, so the UI can show "Imatinib" not "STI".
+    ccd = _resolve_chem_components([c.res_name for c in structure.components])
     out = []
     for i, c in enumerate(structure.components):
+        info = ccd.get((c.res_name or "").upper()) or {}
         out.append(
             {
                 "index": i,
@@ -472,6 +512,11 @@ def _components_json(structure) -> list[dict]:
                 "res_seq": c.res_seq,
                 "kind": c.kind,
                 "atom_count": len(c.atoms),
+                "chem_name": info.get("name"),
+                "formula": info.get("formula"),
+                "weight": info.get("formula_weight"),
+                "smiles": info.get("smiles"),
+                "synonyms": info.get("synonyms") or [],
             }
         )
     return out
@@ -690,10 +735,195 @@ def run_benchmark_job(params: dict) -> dict:
     return result
 
 
+def _default_interface_groups(structure):
+    """Heuristic chain grouping: the two smallest chains vs the rest.
+
+    A reasonable zero-config default (e.g. antibody H+L, or a short peptide,
+    against a larger antigen); the user can always override with explicit a/b.
+    """
+    counts: dict[str, int] = {c: 0 for c in structure.chains}
+    for a in structure.protein_atoms:
+        counts[a.chain] = counts.get(a.chain, 0) + 1
+    chains = sorted(counts, key=lambda c: counts[c])
+    if len(chains) < 2:
+        return [], []
+    if len(chains) == 2:
+        return [chains[0]], [chains[1]]
+    return chains[:2], chains[2:]
+
+
+_GENOMIC_RE = re.compile(
+    r"^(?:chr)?([0-9]{1,2}|[XYM]|MT)[:\-]([0-9]+)[:\-]([ACGT]+)[>\-/]([ACGT]+)$",
+    re.IGNORECASE,
+)
+
+
+def _residue_pocket_index(pockets_list):
+    idx = {}
+    for p in pockets_list:
+        for r in p.get("lining_residues", []):
+            idx.setdefault((r["chain"], r["res_seq"]), p["index"])
+    return idx
+
+
+def _residue_conservation(evo):
+    out = {}
+    if evo and evo.get("residues"):
+        for r in evo["residues"]:
+            if r.get("conservation") is not None:
+                out[(r["chain"], r["res_seq"])] = r["conservation"]
+    return out
+
+
+def run_variants_job(params: dict) -> dict:
+    """Map a list of variants onto a structure and annotate them.
+
+    Protein-position input (R273H / p.Arg273His / position) is mapped to
+    residues now; genomic input (chr:pos ref>alt) gets a best-effort TOPMed/BRAVO
+    allele frequency. When the structure is HLA, mapped variants are also
+    classified against the peptide-binding groove. Optional ESM variant-effect
+    scores are attached alongside when a Forge token is configured.
+    """
+    pdb_id = params.get("pdb") or ""
+    raw_variants = params.get("variants") or []
+    acc_override = clean_text(str(params.get("uniprot") or ""), max_len=20)
+    if not pdb_id:
+        raise ValueError("Need 'pdb'")
+    if not isinstance(raw_variants, list) or not raw_variants:
+        raise ValueError("Need a non-empty 'variants' list")
+
+    variant_strs = []
+    for v in raw_variants[:200]:
+        s = clean_text(str(v), max_len=32)
+        if s:
+            variant_strs.append(s)
+
+    # Genomic-format inputs go to the BRAVO frequency path; the rest are treated
+    # as protein-position variants for structural mapping.
+    protein_inputs, genomic = [], []
+    for s in variant_strs:
+        if _GENOMIC_RE.match(s):
+            genomic.append(s)
+        else:
+            protein_inputs.append(s)
+
+    _text, structure, meta = _load_structure(pdb_id)
+    accs = [acc_override] if acc_override else _get_uniprots(pdb_id)
+
+    uniprot_seq, acc_used, seq_fetch_failed = "", None, False
+    for acc in accs:
+        try:
+            seq = variants.fetch_uniprot_sequence(acc)
+        except FetchError:
+            seq = ""
+            seq_fetch_failed = True
+        if seq:
+            uniprot_seq, acc_used = seq, acc
+            seq_fetch_failed = False
+            break
+
+    mapping = variants.annotate(structure, protein_inputs, uniprot_seq)
+    # If the sequence fetch failed (network error, not "no accession"), mark all
+    # protein variants with a clearer reason than "position not covered".
+    if seq_fetch_failed and not uniprot_seq:
+        for v in mapping.get("variants", []):
+            if not v.get("mapped") and v.get("reason") == "position not covered by the structure's modeled residues":
+                v["reason"] = "UniProt sequence could not be fetched (network error) — retry later"
+
+    # Genomic input -> protein consequence (Ensembl VEP, env-gated) -> residue.
+    # Merged into the same variant list so it gets the same enrichment + HLA
+    # classification below. When VEP is off, genomic variants keep only their
+    # BRAVO frequency (added later) without a structural location.
+    if genomic and vep.available():
+        seq_cache = {acc_used: uniprot_seq} if acc_used else {}
+        for s in genomic:
+            m = _GENOMIC_RE.match(s)
+            cons = vep.annotate_one(m.group(1), m.group(2), m.group(3), m.group(4))
+            entry = {"input": s, "source": "genomic"}
+            if not cons:
+                entry.update(mapped=False, reason="no protein-coding consequence (VEP)")
+                mapping["variants"].append(entry)
+                continue
+            entry.update(gene=cons["gene"], consequence=cons["consequence"],
+                         wt=cons["wt_aa"], mut=cons["mut_aa"],
+                         position=cons["protein_position"], uniprot=cons["uniprot"])
+            if cons["uniprot"] not in accs:
+                entry.update(mapped=False,
+                             reason=f"affects {cons['gene'] or cons['uniprot']}, "
+                                    "not this structure's protein")
+                mapping["variants"].append(entry)
+                continue
+            acc = cons["uniprot"]
+            if acc not in seq_cache:
+                try:
+                    seq_cache[acc] = variants.fetch_uniprot_sequence(acc)
+                except FetchError:
+                    seq_cache[acc] = ""
+            sub = f"{cons['wt_aa']}{cons['protein_position']}{cons['mut_aa']}"
+            mapped = variants.annotate(structure, [sub], seq_cache[acc])["variants"][0]
+            mapped.update(input=s, source="genomic", gene=cons["gene"],
+                          consequence=cons["consequence"])
+            mapping["variants"].append(mapped)
+        mapping["input_count"] = len(mapping["variants"])
+        mapping["mapped_count"] = sum(1 for r in mapping["variants"] if r.get("mapped"))
+
+    # Structural context for mapped residues (pocket membership + conservation).
+    pocket_idx = _residue_pocket_index(_get_pockets(pdb_id))
+    try:
+        cons = _residue_conservation(_get_evolution(pdb_id))
+    except FetchError:
+        cons = {}
+    for v in mapping["variants"]:
+        if v.get("mapped"):
+            key = (v["chain"], v["res_seq"])
+            v["pocket"] = pocket_idx.get(key)
+            v["conservation"] = cons.get(key)
+
+    # HLA groove classification (ties variants to the peptide-binding groove).
+    hla_block = None
+    detection = hla.detect(structure, title=meta.get("title"), uniprots=accs)
+    if detection.get("is_hla"):
+        groove = hla.analyze_groove(structure, detection)
+        hla_block = {
+            "detection": detection,
+            "groove": groove,
+            "variant_classes": hla.classify_variants(groove, mapping["variants"]),
+        }
+
+    # TOPMed/BRAVO allele frequencies for genomic-format inputs (best-effort).
+    population = []
+    for s in genomic:
+        m = _GENOMIC_RE.match(s)
+        chrom, pos, ref, alt = m.group(1), m.group(2), m.group(3), m.group(4)
+        freq = bravo.variant_frequency(chrom, pos, ref, alt)
+        if freq.get("available"):
+            freq["rarity"] = bravo.classify_frequency(freq.get("allele_freq"))
+        freq["input"] = s
+        population.append(freq)
+
+    # ESM variant-effect scores alongside (only if a Forge token is set).
+    esm = (models_esm.score_variants(uniprot_seq, protein_inputs)
+           if models_esm.available() and uniprot_seq
+           else {"available": False, "reason": "ESM scoring not enabled (no ESM_API_KEY)"})
+
+    return {
+        "pdb_id": meta.get("pdb_id") or pdb_id,
+        "uniprot": acc_used,
+        "uniprot_candidates": accs,
+        "mapping": mapping,
+        "hla": hla_block,
+        "population": population,
+        "esm": esm,
+        "vep_enabled": vep.available(),
+        "methods": provenance.variant_methods(),
+    }
+
+
 _JOB_RUNNERS = {
     "dock": run_dock_job,
     "screen": run_screen_job,
     "benchmark": run_benchmark_job,
+    "variants": run_variants_job,
 }
 
 
@@ -746,7 +976,9 @@ class Handler(BaseHTTPRequestHandler):
             path = "/index.html"
         rel = path.lstrip("/")
         full = os.path.normpath(os.path.join(WEB_DIR, rel))
-        if not full.startswith(WEB_DIR) or not os.path.isfile(full):
+        # Use WEB_DIR + sep so a sibling directory whose name begins with "web"
+        # (e.g. web_backup/) cannot pass the startswith check.
+        if not full.startswith(WEB_DIR + os.sep) or not os.path.isfile(full):
             self._status = 404
             self.send_error(404, "Not found")
             return
@@ -833,6 +1065,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_analyze(qs)
         if path == "/api/interactions":
             return self._api_interactions(qs)
+        if path == "/api/interface":
+            return self._api_interface(qs)
+        if path == "/api/nucleic":
+            return self._api_nucleic(qs)
+        if path == "/api/hla":
+            return self._api_hla(qs)
+        if path == "/api/hla/cases":
+            return self._send_json({"cases": hla.curated_cases()})
+        if path == "/api/expression":
+            return self._api_expression(qs)
+        if path == "/api/esm":
+            return self._send_json(models_esm.config())
         if path == "/api/chemical":
             return self._api_chemical(qs)
         if path == "/api/pockets":
@@ -946,7 +1190,9 @@ class Handler(BaseHTTPRequestHandler):
             "upload_id": upload_id,
             "metadata": meta,
             "chains": structure.chains,
+            "nucleic_chains": structure.nucleic_chains,
             "protein_atom_count": len(structure.protein_atoms),
+            "nucleic_atom_count": len(structure.nucleic_atoms),
             "components": _components_json(structure),
             "pdb_data": viewer_text,
         })
@@ -969,7 +1215,9 @@ class Handler(BaseHTTPRequestHandler):
             "id": sid,
             "metadata": meta,
             "chains": structure.chains,
+            "nucleic_chains": structure.nucleic_chains,
             "protein_atom_count": len(structure.protein_atoms),
+            "nucleic_atom_count": len(structure.nucleic_atoms),
             "components": _components_json(structure),
             "pdb_data": text,
         })
@@ -1030,6 +1278,102 @@ class Handler(BaseHTTPRequestHandler):
         profile = interactions.profile_component(structure, component)
         summary = report.summarize(profile, meta)
         return self._send_json({"profile": profile, "report": summary})
+
+    def _api_interface(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        a = clean_text((qs.get("a") or [""])[0], max_len=64)
+        b = clean_text((qs.get("b") or [""])[0], max_len=64)
+        heavy_ch = clean_text((qs.get("heavy") or [""])[0], max_len=8) or None
+        light_ch = clean_text((qs.get("light") or [""])[0], max_len=8) or None
+        scheme = (clean_text((qs.get("scheme") or [""])[0], max_len=16) or "kabat").lower()
+        if scheme not in antibody.SCHEMES:
+            return self._send_error_json(
+                f"Unknown CDR scheme '{scheme}'; accepted values: "
+                + ", ".join(sorted(antibody.SCHEMES))
+            )
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, meta = _load_structure(pdb_id)
+        chains_a = [c for c in a.split(",") if c] if a else []
+        chains_b = [c for c in b.split(",") if c] if b else []
+        if not chains_a or not chains_b:
+            # Default heuristic: the two shortest chains (e.g. antibody H+L) vs
+            # the rest, so the user gets a sensible interface without picking.
+            chains_a, chains_b = _default_interface_groups(structure)
+        if not chains_a or not chains_b:
+            return self._send_error_json(
+                "Need at least two protein chains to define an interface.", status=404
+            )
+        profile = interactions.profile_interface(structure, chains_a, chains_b)
+
+        # CDR annotation — explicit heavy/light takes priority; fall back to
+        # auto-detection when neither is provided but chains_a looks antibody-like.
+        if heavy_ch or light_ch:
+            profile = antibody.annotate_paratope(profile, heavy_ch, light_ch, scheme)
+        else:
+            det = antibody.detect_vhvl_chains(structure)
+            if det["confidence"] in ("high", "medium") and (det["heavy"] or det["light"]):
+                # Only annotate if the detected chains are actually in chains_a.
+                h = det["heavy"] if det["heavy"] in set(chains_a) else None
+                l = det["light"] if det["light"] in set(chains_a) else None
+                if h or l:
+                    profile = antibody.annotate_paratope(profile, h, l, scheme)
+                    profile["antibody_auto_detected"] = True
+
+        return self._send_json({
+            "profile": profile,
+            "metadata": meta,
+            "methods": provenance.interface_methods(),
+        })
+
+    def _api_nucleic(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        chain = clean_text((qs.get("chain") or [""])[0], max_len=8) or None
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, meta = _load_structure(pdb_id)
+        if not structure.nucleic_atoms:
+            return self._send_json({
+                "profile": None,
+                "metadata": meta,
+                "available": False,
+                "reason": "No nucleic-acid (DNA/RNA) chains in this structure.",
+            })
+        profile = interactions.profile_nucleic_interface(structure, chain)
+        return self._send_json({
+            "profile": profile,
+            "metadata": meta,
+            "available": True,
+            "methods": provenance.interface_methods(),
+        })
+
+    def _api_hla(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, meta = _load_structure(pdb_id)
+        uniprots = _get_uniprots(pdb_id)
+        detection = hla.detect(structure, title=meta.get("title"), uniprots=uniprots)
+        groove = hla.analyze_groove(structure, detection) if detection["is_hla"] else None
+        return self._send_json({
+            "metadata": meta,
+            "detection": detection,
+            "groove": groove,
+            "methods": provenance.hla_methods(),
+        })
+
+    def _api_expression(self, qs):
+        gene = clean_text((qs.get("gene") or [""])[0], max_len=32)
+        if not gene:
+            return self._send_error_json("Missing 'gene' parameter")
+        result = cellxgene.gene_expression(gene)
+        result["note"] = (
+            "Bulk single-cell expression context from CZ CELL×GENE — which cell "
+            "types express this gene across human tissues. Research-only; not "
+            "patient-specific. The summary requires SNACLEX_ENABLE_CELLXGENE; the "
+            "deep link is always available."
+        )
+        return self._send_json(result)
 
     def _api_chemical(self, qs):
         query = clean_text((qs.get("q") or [""])[0])

@@ -191,7 +191,32 @@ button:disabled { opacity: 0.5; cursor: progress; }
 .spacer { flex: 1; }
 .chk { font-size: 12.5px; color: var(--muted); display: inline-flex; gap: 5px; align-items: center; }
 .chk select { font-size: 12.5px; padding: 3px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg); color: var(--text); }
+.viewer-stage { position: relative; flex: 1; display: flex; min-height: 560px; }
 .viewer3d { position: relative; flex: 1; min-height: 560px; background: #ffffff; }
+
+/* Live hover identity readout. */
+.viewer-readout { font-size: 12.5px; padding: 6px 10px; background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+.viewer-readout .vread-cat { font-weight: 700; }
+
+/* Persistent click detail card, overlaid in the viewer corner. */
+.viewer-info { position: absolute; top: 12px; right: 12px; max-width: 280px; background: #fff; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 10px 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.12); font-size: 12.5px; z-index: 5; }
+.vinfo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.vinfo-cat { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 11px; }
+.vinfo-title { font-weight: 600; margin: 4px 0; }
+.vinfo-notes { margin: 8px 0 0; padding-left: 18px; }
+.vinfo-notes li { margin-bottom: 3px; }
+.vinfo-chem { margin: 8px 0; display: grid; gap: 2px; }
+.vinfo-chem .muted { display: inline-block; min-width: 78px; }
+.vinfo-smiles { word-break: break-all; font-family: ui-monospace, monospace; font-size: 11.5px; }
+#vinfoLookup { margin-top: 6px; }
+.comp-code { display: inline-block; margin-left: 4px; padding: 0 5px; font-size: 11px; color: var(--muted); background: var(--soft); border: 1px solid var(--line); border-radius: 3px; vertical-align: middle; }
+
+/* Visual-encoding legend below the viewer. */
+.viewer-legend { margin-top: 10px; font-size: 12px; }
+.viewer-legend .lg-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.viewer-legend .lg { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.viewer-legend .lg-sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--line-strong); }
+.viewer-legend .lg-mode { margin-top: 6px; }
 
 /* ---------- interactions ---------- */
 .counts-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
@@ -384,3 +409,29 @@ select:focus-visible, textarea:focus-visible, .ex:focus-visible,
 .bench-fail { color: #b3261e; font-weight: 600; }
 .bench-res { margin-top: 10px; font-size: 12px; }
 .bench-case { cursor: pointer; }
+
+/* Shared data tables + chips for interface / variants / HLA panels. */
+.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 4px 0 12px; }
+.data-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.data-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.data-table tr[data-focus]:hover { background: var(--soft); }
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0 4px; }
+.chip { background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 9px; font-size: 12px; }
+.examples .ex.hla-case { display: inline-block; }
+
+/* ---------- Antibody CDR annotation ---------- */
+.cdr-badge {
+  display: inline-block; color: #fff; font-size: 11px; font-weight: 600;
+  border-radius: 3px; padding: 1px 5px; vertical-align: middle; letter-spacing: 0.3px;
+}
+.cdr-panel {
+  background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px 14px; margin: 6px 0 10px; font-size: 12.5px;
+}
+.cdr-scheme-label {
+  font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+}
+.cdr-warning {
+  margin-top: 8px; font-size: 11.5px; color: #b3261e;
+  border-left: 3px solid #b3261e; padding-left: 8px;
+}

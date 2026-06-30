@@ -53,7 +53,20 @@ behind it, and exports to JSON/CSV/PDB.
    sticks and detected pockets as a translucent sphere over their lining residues.
 7. **Chemical lookup** (PubChem) — formula, MW, XLogP, TPSA, H-bond donors/acceptors,
    rotatable bonds, SMILES, Lipinski druglikeness, plus ChEMBL development status.
-8. **Research report** — plain-language summary + generated hypotheses, exportable as `.txt`.
+8. **Interfaces & nucleic acids** — profile a protein–protein / peptide interface
+   (antibody–antigen epitope/paratope) or protein–DNA/RNA contacts (phosphate salt
+   bridges, base/backbone H-bonds, base stacking).
+9. **Variants on the structure** — paste protein-position variants (`R273H`,
+   `p.Arg175His`) and map them onto residues with pocket / conservation context;
+   genomic inputs (`chr17:7676154:G>A`) get a public TOPMed/BRAVO allele frequency.
+10. **HLA groove analysis** — detect an HLA/MHC complex, derive the peptide-binding
+    groove and anchor pockets, and classify variants as anchor-pocket / groove-lining
+    / peripheral. Structural interpretation only — *not* affinity/immunogenicity
+    prediction or HLA typing.
+11. **Optional ESM model layer** (env-gated `ESM_API_KEY`) — EvolutionaryScale Forge
+    ESM3 structure-from-sequence and ESMC variant-effect scores, shown alongside the
+    structural overlay. The default build is structural-only and runs without a token.
+12. **Research report** — plain-language summary + generated hypotheses, exportable as `.txt`.
 
 ## Pockets (apo-structure docking)
 

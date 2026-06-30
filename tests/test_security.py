@@ -90,6 +90,18 @@ class TestSecurityConfig(unittest.TestCase):
         self.assertIn("frame-ancestors 'none'", server._CSP)
         self.assertIn("object-src 'none'", server._CSP)
 
+    def test_static_path_uses_separator_guard(self):
+        # The startswith check must use WEB_DIR + os.sep, not bare WEB_DIR,
+        # so a sibling directory whose name begins with "web" (e.g. web_backup/)
+        # cannot pass the containment check.
+        import os
+        web_dir = server.WEB_DIR
+        # A normalized path to a sibling dir whose name starts with "web"
+        sibling = os.path.normpath(os.path.join(web_dir, "..", "web_backup", "secret.txt"))
+        # With the os.sep guard it must NOT pass:
+        self.assertFalse(sibling.startswith(web_dir + os.sep),
+                         "Sibling directory with web-prefixed name must NOT pass containment check")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -79,15 +79,19 @@ def mmcif_text(rows):
     return "\n".join(out) + "\n"
 
 
-def structure(protein=None, components=None):
-    """Assemble a Structure from protein atoms and hetero components."""
+def structure(protein=None, components=None, nucleic=None):
+    """Assemble a Structure from protein atoms, hetero components, nucleic atoms."""
     protein = list(protein or [])
     components = list(components or [])
-    all_atoms = protein + [a for c in components for a in c.atoms]
+    nucleic = list(nucleic or [])
+    all_atoms = protein + nucleic + [a for c in components for a in c.atoms]
     chains = sorted({a.chain for a in protein})
+    nucleic_chains = sorted({a.chain for a in nucleic})
     return Structure(
         atoms=all_atoms,
         protein_atoms=protein,
         components=components,
         chains=chains,
+        nucleic_atoms=nucleic,
+        nucleic_chains=nucleic_chains,
     )

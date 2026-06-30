@@ -61,8 +61,11 @@
         <button class="tab active" data-tab="overview">Overview</button>
         <button class="tab" data-tab="viewer">3D Atomic Viewer</button>
         <button class="tab" data-tab="interactions">Interactions</button>
+        <button class="tab" data-tab="interface">Interface</button>
         <button class="tab" data-tab="pockets">Pockets</button>
         <button class="tab" data-tab="evolution">Evolution</button>
+        <button class="tab" data-tab="variants">Variants</button>
+        <button class="tab" data-tab="hla">HLA</button>
         <button class="tab" data-tab="docking">Docking</button>
         <button class="tab" data-tab="benchmark">Benchmark</button>
         <button class="tab" data-tab="chemical">Chemical</button>
@@ -95,11 +98,41 @@
           <button id="shareView" class="mini">Share view</button>
           <button id="resetView" class="mini">Reset view</button>
         </div>
-        <div id="viewer3d" class="viewer3d"></div>
+        <div id="viewerReadout" class="viewer-readout" aria-live="polite"><span class="muted">Hover the structure to identify atoms — protein, ligand, ion, metal, water or DNA/RNA.</span></div>
+        <div class="viewer-stage">
+          <div id="viewer3d" class="viewer3d"></div>
+          <div id="viewerInfo" class="viewer-info" hidden></div>
+        </div>
+        <div id="viewerLegend" class="viewer-legend"></div>
       </section>
 
       <section class="panel" data-panel="interactions">
         <div id="interactionContent" class="empty">Select a bound molecule to profile its atomic interactions.</div>
+      </section>
+
+      <section class="panel" data-panel="interface">
+        <div class="pocket-controls" style="flex-wrap:wrap">
+          <button id="interfaceBtn" class="primary">Profile protein interface</button>
+          <span class="hint" style="margin:0">Maps contacts between two groups of protein chains — antibody–antigen epitope/paratope, or the HLA peptide–groove. Leave the boxes blank to auto-pick the two smallest chains vs the rest.</span>
+        </div>
+        <div class="dock-row" style="margin-top:8px">
+          <div><label class="field-label">Group A chains (e.g. H,L)</label><input id="ifaceA" type="text" placeholder="auto" /></div>
+          <div><label class="field-label">Group B chains (e.g. A)</label><input id="ifaceB" type="text" placeholder="auto" /></div>
+          <button id="nucleicBtn">Protein–nucleic (DNA/RNA)</button>
+        </div>
+        <div class="dock-row" style="margin-top:6px">
+          <div><label class="field-label">Heavy chain (CDR H1–H3)</label><input id="ifaceHeavy" type="text" placeholder="auto-detect" /></div>
+          <div><label class="field-label">Light chain (CDR L1–L3)</label><input id="ifaceLight" type="text" placeholder="auto-detect" /></div>
+          <div>
+            <label class="field-label">CDR scheme</label>
+            <select id="ifaceScheme">
+              <option value="kabat">Kabat</option>
+              <option value="imgt">IMGT</option>
+              <option value="chothia">Chothia</option>
+            </select>
+          </div>
+        </div>
+        <div id="interfaceContent" class="empty">No interface profiled yet.</div>
       </section>
 
       <section class="panel" data-panel="pockets">
@@ -116,6 +149,34 @@
           <span class="hint" style="margin:0">Retrieves the protein's Pfam family alignment and scores each residue &amp; pocket by evolutionary conservation. A few seconds.</span>
         </div>
         <div id="evolutionContent" class="empty">No conservation analysis yet. Click “Analyze conservation”.</div>
+      </section>
+
+      <section class="panel" data-panel="variants">
+        <div class="dock-controls">
+          <div class="dock-row">
+            <div style="flex:2">
+              <label class="field-label">Variants — one per line (e.g. R273H, p.Arg175His), or genomic chr17:7676154:G&gt;A</label>
+              <textarea id="variantInput" rows="3" placeholder="R273H&#10;R248Q&#10;chr17:7676154:G>A"></textarea>
+            </div>
+            <div>
+              <label class="field-label">UniProt (optional)</label>
+              <input id="variantUniprot" type="text" placeholder="auto" />
+            </div>
+            <button id="variantBtn" class="primary">Map variants</button>
+          </div>
+          <div class="hint">Aligns the UniProt canonical sequence to the loaded structure and places each variant on a residue, with pocket / conservation / HLA-groove context (and TOPMed/BRAVO frequency for genomic input). Structural localization, not a pathogenicity call.</div>
+        </div>
+        <div id="variantContent" class="empty">No variants mapped yet.</div>
+      </section>
+
+      <section class="panel" data-panel="hla">
+        <div class="pocket-controls" style="flex-wrap:wrap">
+          <button id="hlaBtn" class="primary">Analyze HLA groove</button>
+          <span class="hint" style="margin:0">Detects an HLA/MHC complex, derives the peptide-binding groove and anchor pockets, and (with the Variants tab) classifies variants by their groove location. Structural interpretation only — not affinity or immunogenicity prediction.</span>
+        </div>
+        <div class="section-h">Curated HLA cases</div>
+        <div id="hlaCases" class="examples">Loading curated cases…</div>
+        <div id="hlaContent" class="empty">No HLA analysis yet.</div>
       </section>
 
       <section class="panel" data-panel="docking">
@@ -183,7 +244,7 @@
       <a href="/api.html">API</a>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
-      <span class="muted">Data: RCSB · PubChem · ChEMBL · Pfam</span>
+      <span class="muted">Data: RCSB · PubChem · ChEMBL · Pfam · UniProt · TOPMed/BRAVO</span>
     </nav>
   </footer>
 

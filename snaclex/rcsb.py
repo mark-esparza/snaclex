@@ -125,6 +125,94 @@ def fetch_uniprot_accessions(pdb_id: str) -> list[str]:
     return accs
 
 
+def _parse_chemcomp_descriptors(descriptors) -> str | None:
+    """First SMILES descriptor from a pdbx_chem_comp_descriptor list."""
+    for d in descriptors or []:
+        if "SMILES" in (d.get("type") or "").upper() and d.get("descriptor"):
+            return d["descriptor"]
+    return None
+
+
+def _fetch_chem_component_rest(code: str) -> dict | None:
+    """Resolve a single component via the stable REST chemcomp endpoint.
+
+    Used as a fallback when the batched GraphQL query doesn't resolve a code,
+    so names keep working even if the GraphQL schema drifts.
+    """
+    try:
+        data = fetch_json(f"https://data.rcsb.org/rest/v1/core/chemcomp/{code}")
+    except FetchError:
+        return None
+    meta = data.get("chem_comp") or {}
+    if not meta.get("name") and not meta.get("formula"):
+        return None
+    synonyms = [
+        s.get("name") for s in (data.get("rcsb_chem_comp_synonyms") or [])
+        if s.get("name")
+    ]
+    return {
+        "name": meta.get("name"),
+        "formula": meta.get("formula"),
+        "formula_weight": meta.get("formula_weight"),
+        "type": meta.get("type"),
+        "smiles": _parse_chemcomp_descriptors(data.get("pdbx_chem_comp_descriptor")),
+        "synonyms": synonyms[:5],
+    }
+
+
+def fetch_chem_components(comp_ids: list[str]) -> dict:
+    """Resolve PDB chemical-component codes to names + chemistry via the CCD.
+
+    Returns ``{CODE: {name, formula, formula_weight, smiles, synonyms, type}}``
+    for the codes that resolve. Tries one batched RCSB GraphQL call (mirrors
+    ``fetch_entry_summaries``), then falls back to the stable per-code REST
+    endpoint for any codes GraphQL didn't resolve. Returns only what resolved,
+    so a schema hiccup or offline run never blocks structure loading.
+    """
+    codes = sorted({(c or "").strip().upper() for c in comp_ids if (c or "").strip()})
+    if not codes:
+        return {}
+    import urllib.parse
+
+    out: dict[str, dict] = {}
+    id_list = ",".join(f'"{c}"' for c in codes)
+    query = (
+        "{chem_comps(comp_ids:[" + id_list + "])"
+        "{chem_comp{id name formula formula_weight type pdbx_synonyms}"
+        "pdbx_chem_comp_descriptor{type descriptor}}}"
+    )
+    url = "https://data.rcsb.org/graphql?query=" + urllib.parse.quote(query)
+    try:
+        data = fetch_json(url)
+    except FetchError:
+        data = {}
+
+    for cc in (data.get("data", {}).get("chem_comps") or []):
+        meta = cc.get("chem_comp") or {}
+        code = (meta.get("id") or "").upper()
+        if not code:
+            continue
+        synonyms = [
+            s.strip() for s in (meta.get("pdbx_synonyms") or "").split(";") if s.strip()
+        ]
+        out[code] = {
+            "name": meta.get("name"),
+            "formula": meta.get("formula"),
+            "formula_weight": meta.get("formula_weight"),
+            "type": meta.get("type"),
+            "smiles": _parse_chemcomp_descriptors(cc.get("pdbx_chem_comp_descriptor")),
+            "synonyms": synonyms[:5],
+        }
+
+    # REST fallback for anything GraphQL missed (schema drift, partial result).
+    for code in codes:
+        if code not in out or not out[code].get("name"):
+            rest = _fetch_chem_component_rest(code)
+            if rest:
+                out[code] = rest
+    return out
+
+
 def fetch_entry_summaries(ids: list[str]) -> dict:
     """Batch-fetch {pdb_id: {title, organism}} for several entries at once."""
     if not ids:

@@ -36,6 +36,50 @@ _ENDPOINTS = [
         "returns": "atomic interaction profile + plain-language report",
     },
     {
+        "method": "GET", "path": "/api/interface",
+        "params": {"pdb": "structure id (required)",
+                   "a": "comma-separated chain ids for group A (optional)",
+                   "b": "comma-separated chain ids for group B (optional)",
+                   "heavy": "chain id of the antibody heavy chain for CDR annotation (optional)",
+                   "light": "chain id of the antibody light chain for CDR annotation (optional)",
+                   "scheme": "CDR numbering scheme: kabat (default), imgt, or chothia"},
+        "returns": "protein-protein/peptide interface profile (epitope/paratope "
+                   "contact residues) + methods/provenance. Defaults to the two "
+                   "smallest chains vs the rest when a/b are omitted. When heavy/light "
+                   "are given (or auto-detected), paratope residues are annotated with "
+                   "CDR loop labels (H1-H3 / L1-L3) and a cdr_summary is added.",
+    },
+    {
+        "method": "GET", "path": "/api/nucleic",
+        "params": {"pdb": "structure id (required)",
+                   "chain": "optional nucleic chain to restrict to"},
+        "returns": "protein-DNA/RNA interface profile (binding residues + "
+                   "contacted nucleotides) + methods/provenance",
+    },
+    {
+        "method": "GET", "path": "/api/hla",
+        "params": {"pdb": "structure id (required)"},
+        "returns": "HLA/MHC detection, peptide-binding-groove + anchor-pocket "
+                   "residues, peptide contacts + methods/provenance",
+    },
+    {
+        "method": "GET", "path": "/api/hla/cases",
+        "params": {},
+        "returns": "curated well-known HLA structures (allele, pdb, class, note)",
+    },
+    {
+        "method": "GET", "path": "/api/expression",
+        "params": {"gene": "gene symbol, e.g. HLA-A (required)"},
+        "returns": "CELL×GENE expression context: a deep link (always) and, when "
+                   "SNACLEX_ENABLE_CELLXGENE is set, the top expressing cell types",
+    },
+    {
+        "method": "GET", "path": "/api/esm",
+        "params": {},
+        "returns": "ESM model-layer config/status (available, fold/score models). "
+                   "Features are active only when ESM_API_KEY is set.",
+    },
+    {
         "method": "GET", "path": "/api/chemical",
         "params": {"q": "drug/chemical/element name or CID (required)",
                    "pdb": "optional structure id for ChEMBL target cross-reference"},
@@ -63,13 +107,18 @@ _ENDPOINTS = [
     },
     {
         "method": "POST", "path": "/api/jobs",
-        "body": {"kind": "'dock' | 'screen' | 'benchmark'",
+        "body": {"kind": "'dock' | 'screen' | 'benchmark' | 'variants'",
                  "params": "kind-specific params object"},
         "returns": "202 with {job_id, status}; poll GET /api/jobs/{id}",
         "notes": "dock: {pdb, chem, comp|pocket}. screen: {pdb, chems, comp|pocket}. "
                  "benchmark: {pdb, ligand|comp} — redocks the known ligand and "
                  "reports pocket recovery, pose RMSD, interactions recovered, and "
-                 "physical plausibility.",
+                 "physical plausibility. variants: {pdb, variants:[...], uniprot?} — "
+                 "maps protein-position variants onto residues (pocket / "
+                 "conservation / HLA-groove context); genomic inputs (chr:pos ref>alt) "
+                 "get a TOPMed/BRAVO frequency and, when SNACLEX_ENABLE_VEP is set, an "
+                 "Ensembl-VEP protein consequence mapped onto the structure; optional "
+                 "ESM scores when ESM_API_KEY is set.",
     },
     {
         "method": "GET", "path": "/api/benchmark/cases",

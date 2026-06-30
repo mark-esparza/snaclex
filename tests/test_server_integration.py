@@ -270,6 +270,279 @@ class TestServerIntegration(unittest.TestCase):
                 self.fail("benchmark job did not finish")
 
 
+    # ---- interface / nucleic / HLA / esm (mocked structures) ---------
+    def _interface_structure(self):
+        from tests.fixtures import atom, structure
+        prot = [
+            atom("N", 0, 0, 0, name="NH1", res_name="ARG", chain="A", res_seq=10),
+            atom("O", 3.0, 0, 0, name="OD1", res_name="ASP", chain="B", res_seq=20),
+        ]
+        return structure(prot)
+
+    def test_interface_endpoint(self):
+        s = self._interface_structure()
+        meta = {"pdb_id": "IFC1", "title": "complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/interface?pdb=IFC1&a=A&b=B")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertEqual(data["profile"]["mode"], "protein-protein")
+        self.assertGreaterEqual(data["profile"]["counts"]["salt_bridge"], 1)
+        self.assertIn("methods", data)
+
+    def test_nucleic_endpoint(self):
+        from tests.fixtures import atom, structure
+        prot = [atom("N", 0, 0, 0, name="NZ", res_name="LYS", chain="A", res_seq=10)]
+        nuc = [atom("O", 3.0, 0, 0, name="OP1", res_name="DA", chain="B", res_seq=1)]
+        s = structure(prot, nucleic=nuc)
+        meta = {"pdb_id": "NUC1", "title": "protein-DNA"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/nucleic?pdb=NUC1")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["available"])
+        self.assertEqual(data["profile"]["mode"], "protein-nucleic")
+
+    def test_nucleic_endpoint_no_nucleic(self):
+        s = self._interface_structure()
+        meta = {"pdb_id": "NUC2", "title": "no DNA"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/nucleic?pdb=NUC2")
+        self.assertEqual(resp.status, 200)
+        self.assertFalse(json.loads(body)["available"])
+
+    def _hla_structure(self):
+        from tests.fixtures import atom, structure
+        groove = {100, 150}
+        prot = []
+        for i in range(1, 271):
+            if i in groove:
+                continue
+            prot.append(atom("C", 500.0 + i, 0, 0, name="CA", res_name="ALA",
+                             chain="A", res_seq=i))
+        prot.append(atom("N", 3.0, 0, 0, name="N", res_name="GLN", chain="A", res_seq=100))
+        prot.append(atom("O", 3.0, 20, 0, name="OD1", res_name="ASP", chain="A", res_seq=150))
+        for i in range(1, 100):
+            prot.append(atom("C", -500.0 - i, 0, 0, name="CA", res_name="ALA",
+                             chain="B", res_seq=i))
+        pep = {2: (0.0, 0.0, 0.0), 9: (0.0, 20.0, 0.0)}
+        for i in range(1, 10):
+            x, y, z = pep.get(i, (100.0, 100.0 + i, 0.0))
+            prot.append(atom("O", x, y, z, name="O", res_name="GLY", chain="C", res_seq=i))
+        return structure(prot)
+
+    def test_hla_endpoint(self):
+        s = self._hla_structure()
+        meta = {"pdb_id": "HLA1", "title": "HLA-A*02:01 complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_get_uniprots", return_value=[]):
+            resp, body = self._get("/api/hla?pdb=HLA1")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["detection"]["is_hla"])
+        self.assertEqual(data["detection"]["mhc_class"], "I")
+        self.assertTrue(data["groove"]["available"])
+        self.assertEqual(data["groove"]["anchor_peptide_positions"], [2, 9])
+
+    def test_hla_cases_endpoint(self):
+        resp, body = self._get("/api/hla/cases")
+        self.assertEqual(resp.status, 200)
+        cases = json.loads(body)["cases"]
+        self.assertTrue(any(c["allele"].startswith("HLA-B*57") for c in cases))
+
+    def test_expression_endpoint_link_only_when_disabled(self):
+        with mock.patch.object(server.cellxgene, "available", return_value=False):
+            resp, body = self._get("/api/expression?gene=HLA-A")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertIn("gene-expression", data["link"])
+        self.assertFalse(data["available"])
+
+    def test_expression_endpoint_summary_when_enabled(self):
+        fake = {"gene": "HLA-A", "link": "https://x", "available": True,
+                "ensembl_id": "ENSG1", "cell_types": [{"cell_type": "B cell", "mean_expr": 3.1, "pct_cells": 0.8}]}
+        with mock.patch.object(server.cellxgene, "gene_expression", return_value=fake):
+            resp, body = self._get("/api/expression?gene=HLA-A")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["available"])
+        self.assertEqual(data["cell_types"][0]["cell_type"], "B cell")
+
+    def test_expression_endpoint_requires_gene(self):
+        resp, body = self._get("/api/expression")
+        self.assertEqual(resp.status, 400)
+        self.assertIn("error", json.loads(body))
+
+    def test_esm_status_endpoint(self):
+        resp, body = self._get("/api/esm")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertIn("available", data)
+        self.assertIn("fold_model", data)
+
+    def _seq_structure(self):
+        from tests.fixtures import atom, structure
+        three = {"A": "ALA", "C": "CYS", "D": "ASP", "E": "GLU", "F": "PHE",
+                 "G": "GLY", "H": "HIS", "I": "ILE", "K": "LYS", "L": "LEU"}
+        seq = "ACDEFGHIKL"
+        prot = [atom("C", float(i), 0, 0, name="CA", res_name=three[a],
+                     chain="A", res_seq=i + 1) for i, a in enumerate(seq)]
+        return structure(prot)
+
+    def test_variants_job(self):
+        s = self._seq_structure()
+        meta = {"pdb_id": "VAR1", "title": "p53-like"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_get_uniprots", return_value=["P99999"]), \
+             mock.patch.object(server, "_get_pockets", return_value=[]), \
+             mock.patch.object(server, "_get_evolution", return_value={"available": False}), \
+             mock.patch.object(server.variants, "fetch_uniprot_sequence",
+                               return_value="ACDEFGHIKL"):
+            resp, body = self._post("/api/jobs", {"kind": "variants",
+                                                  "params": {"pdb": "VAR1",
+                                                             "variants": ["C2D", "K9A"]}})
+            self.assertEqual(resp.status, 202)
+            job_id = json.loads(body)["job_id"]
+            for _ in range(200):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "done":
+                    res = st["result"]
+                    self.assertEqual(res["mapping"]["mapped_count"], 2)
+                    self.assertFalse(res["esm"]["available"])
+                    break
+                if st["status"] == "error":
+                    self.fail(f"variants job errored: {st['error']}")
+                time.sleep(0.05)
+            else:
+                self.fail("variants job did not finish")
+
+
+    # ---- component chemical-name enrichment --------------------------
+    def _ligand_structure(self, code):
+        from tests.fixtures import atom, component, structure
+        lig = component(code, [
+            atom("C", 0, 0, 0, hetero=True, res_name=code, chain="B", res_seq=900),
+            atom("N", 1.4, 0, 0, hetero=True, res_name=code, chain="B", res_seq=900),
+        ], chain="B", res_seq=900)
+        prot = [atom("C", 9, 0, 0, name="CA", res_name="ALA", chain="A", res_seq=1)]
+        return structure(prot, [lig])
+
+    def test_components_enriched_with_chem_name(self):
+        s = self._ligand_structure("STI")
+        server._CHEMCOMP_CACHE.clear()
+        ccd = {"STI": {"name": "Imatinib", "formula": "C29 H31 N7 O",
+                       "formula_weight": 493.6, "smiles": "Cc1...", "synonyms": ["Gleevec"]}}
+        with mock.patch.object(server.rcsb, "fetch_chem_components", return_value=ccd):
+            comps = server._components_json(s)
+        sti = next(c for c in comps if c["res_name"] == "STI")
+        self.assertEqual(sti["chem_name"], "Imatinib")
+        self.assertEqual(sti["formula"], "C29 H31 N7 O")
+        self.assertEqual(sti["smiles"], "Cc1...")
+
+    def test_components_graceful_without_ccd(self):
+        s = self._ligand_structure("XYZ")
+        server._CHEMCOMP_CACHE.clear()
+        with mock.patch.object(server.rcsb, "fetch_chem_components", return_value={}):
+            comps = server._components_json(s)
+        xyz = next(c for c in comps if c["res_name"] == "XYZ")
+        self.assertIsNone(xyz["chem_name"])
+        self.assertEqual(xyz["res_name"], "XYZ")  # still present, just unnamed
+
+
+    def test_variants_job_genomic_vep_mapping(self):
+        # With VEP enabled+mocked, a genomic SNV resolves to a protein change and
+        # maps onto the structure residue, alongside protein-position inputs.
+        s = self._seq_structure()  # sequence ACDEFGHIKL at residues 1..10
+        meta = {"pdb_id": "VEP1", "title": "p53-like"}
+        cons = {"gene": "TP53", "uniprot": "P04637", "protein_position": 2,
+                "wt_aa": "C", "mut_aa": "D", "consequence": "missense_variant"}
+        with mock.patch.object(server, "_load_structure", return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_get_uniprots", return_value=["P04637"]), \
+             mock.patch.object(server, "_get_pockets", return_value=[]), \
+             mock.patch.object(server, "_get_evolution", return_value={"available": False}), \
+             mock.patch.object(server.variants, "fetch_uniprot_sequence", return_value="ACDEFGHIKL"), \
+             mock.patch.object(server.vep, "available", return_value=True), \
+             mock.patch.object(server.vep, "annotate_one", return_value=cons), \
+             mock.patch.object(server.bravo, "variant_frequency",
+                               return_value={"available": False, "reason": "x"}):
+            resp, body = self._post("/api/jobs", {"kind": "variants",
+                                                  "params": {"pdb": "VEP1",
+                                                             "variants": ["chr17:7676154:G>A"]}})
+            self.assertEqual(resp.status, 202)
+            job_id = json.loads(body)["job_id"]
+            for _ in range(200):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "done":
+                    res = st["result"]
+                    self.assertTrue(res["vep_enabled"])
+                    gv = next(v for v in res["mapping"]["variants"] if v.get("source") == "genomic")
+                    self.assertTrue(gv["mapped"])
+                    self.assertEqual(gv["res_id"], "A/CYS2")
+                    self.assertEqual(gv["gene"], "TP53")
+                    break
+                if st["status"] == "error":
+                    self.fail(f"variants job errored: {st['error']}")
+                time.sleep(0.05)
+            else:
+                self.fail("variants job did not finish")
+
+    def test_interface_bad_cdr_scheme_returns_400(self):
+        """Unknown CDR scheme must return 400 rather than silently falling back."""
+        s = self._interface_structure()
+        meta = {"pdb_id": "IFC2", "title": "complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/interface?pdb=IFC2&a=A&b=B&scheme=bogus")
+        self.assertEqual(resp.status, 400)
+        data = json.loads(body)
+        self.assertIn("error", data)
+
+    def test_interface_cdr_annotation_with_scheme(self):
+        """Valid CDR scheme with explicit heavy/light chain returns annotated profile."""
+        s = self._interface_structure()
+        meta = {"pdb_id": "IFC3", "title": "complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/interface?pdb=IFC3&a=A&b=B&heavy=A&scheme=imgt")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["profile"]["has_cdr_annotation"])
+        self.assertEqual(data["profile"]["antibody_chains"]["scheme"], "imgt")
+
+    def test_uniprot_failure_cache_retries_after_ttl(self):
+        """A failed UniProt lookup should be retried after UNIPROT_FAIL_TTL, not cached forever."""
+        import time as time_mod
+        server._UNIPROT_CACHE.clear()
+        pid = "FAIL"
+        with mock.patch.object(server.rcsb, "fetch_uniprot_accessions",
+                               side_effect=server.FetchError("down")):
+            result1 = server._get_uniprots(pid)
+        self.assertEqual(result1, [])
+        # The failure is cached — should return immediately without retrying
+        with mock.patch.object(server.rcsb, "fetch_uniprot_accessions",
+                               return_value=["P99999"]) as mock_fetch:
+            result2 = server._get_uniprots(pid)
+        self.assertEqual(result2, [])
+        mock_fetch.assert_not_called()  # returned from cache, no retry yet
+
+        # Expire the failure TTL by backdating the cached timestamp
+        cached_result, _ts = server._UNIPROT_CACHE[pid]
+        server._UNIPROT_CACHE[pid] = (cached_result, time_mod.monotonic() - server._UNIPROT_FAIL_TTL - 1)
+
+        with mock.patch.object(server.rcsb, "fetch_uniprot_accessions",
+                               return_value=["P99999"]) as mock_fetch2:
+            result3 = server._get_uniprots(pid)
+        mock_fetch2.assert_called_once()  # retry happened
+        self.assertEqual(result3, ["P99999"])
+
+
 def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):
     return (f"{rec:<6}{serial:>5} {name:<4} {res:>3} {chain}{seq:>4}    "
             f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00          {el:>2}")

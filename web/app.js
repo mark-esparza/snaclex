@@ -17,6 +17,95 @@ const TYPE_LABEL = {
 };
 const WATER = ["HOH", "WAT", "DOD", "H2O", "SOL"];
 
+// Friendly names so the viewer can describe what the user is observing.
+const AA_NAMES = {
+  ALA: "Alanine", ARG: "Arginine", ASN: "Asparagine", ASP: "Aspartate",
+  CYS: "Cysteine", GLN: "Glutamine", GLU: "Glutamate", GLY: "Glycine",
+  HIS: "Histidine", ILE: "Isoleucine", LEU: "Leucine", LYS: "Lysine",
+  MET: "Methionine", PHE: "Phenylalanine", PRO: "Proline", SER: "Serine",
+  THR: "Threonine", TRP: "Tryptophan", TYR: "Tyrosine", VAL: "Valine",
+  MSE: "Selenomethionine", SEC: "Selenocysteine", PYL: "Pyrrolysine",
+};
+const ELEMENT_NAMES = {
+  H: "Hydrogen", C: "Carbon", N: "Nitrogen", O: "Oxygen", P: "Phosphorus",
+  S: "Sulfur", SE: "Selenium", F: "Fluorine", CL: "Chlorine", BR: "Bromine",
+  I: "Iodine", NA: "Sodium", K: "Potassium", MG: "Magnesium", CA: "Calcium",
+  MN: "Manganese", FE: "Iron", CO: "Cobalt", NI: "Nickel", CU: "Copper",
+  ZN: "Zinc", MO: "Molybdenum", CD: "Cadmium", HG: "Mercury", PT: "Platinum",
+  AU: "Gold", AG: "Silver", PB: "Lead", LI: "Lithium", AL: "Aluminium",
+};
+// Mirrors snaclex.pdbparse.NUCLEOTIDE_RESIDUES.
+const NUCLEOTIDES = [
+  "DA", "DC", "DG", "DT", "DU", "DI", "A", "C", "G", "U", "I", "N",
+  "5MC", "5MU", "1MA", "7MG", "2MG", "M2G", "OMC", "OMG", "PSU", "H2U",
+];
+const NUC_NAMES = {
+  DA: "Adenine (DNA)", DC: "Cytosine (DNA)", DG: "Guanine (DNA)",
+  DT: "Thymine (DNA)", DU: "Uracil (DNA)",
+  A: "Adenine (RNA)", C: "Cytosine (RNA)", G: "Guanine (RNA)",
+  U: "Uracil (RNA)", I: "Inosine",
+};
+
+function elementName(el) {
+  if (!el) return "";
+  return ELEMENT_NAMES[String(el).toUpperCase()] || el;
+}
+
+// Classify the atom under the cursor into a molecule category with a friendly
+// one-line description, so the viewer tells the user *what* they are observing.
+function classifyAtom(atom) {
+  const resn = (atom.resn || "").toUpperCase();
+  const chain = atom.chain ? ` · chain ${atom.chain}` : "";
+  const atomBit = atom.atom ? ` · ${atom.atom} (${elementName(atom.elem)})` : "";
+
+  if (atom.model === 1 && state.dockPose) {
+    return { category: "Docked pose", icon: "🎯",
+      title: `Docked pose · ${state.dockPose.label || "ligand"}${atomBit}`,
+      detail: "Predicted (docked) ligand pose — not an experimental position." };
+  }
+  if (WATER.includes(resn)) {
+    return { category: "Water", icon: "💧",
+      title: `Water${chain}`, detail: "Crystallographic water molecule." };
+  }
+  if (!atom.hetflag && NUCLEOTIDES.includes(resn)) {
+    const nm = NUC_NAMES[resn] || resn;
+    return { category: "Nucleic acid", icon: "🧬",
+      title: `Nucleic acid · ${nm} ${atom.resi}${chain}${atomBit}`,
+      detail: "DNA/RNA nucleotide." };
+  }
+  if (!atom.hetflag) {
+    const full = AA_NAMES[resn] || resn;
+    return { category: "Protein residue", icon: "🧬",
+      title: `Protein · ${full} ${atom.resi}${chain}${atomBit}`,
+      detail: "Amino-acid residue in a protein chain." };
+  }
+  // Hetero: use the parsed component's kind + resolved chemical name when matched.
+  const comp = (state.components || []).find(
+    (c) => c.chain === atom.chain && c.res_seq === atom.resi
+  );
+  const kind = comp ? comp.kind : null;
+  // "Imatinib (STI)" when the chemical name resolved, else just the code.
+  const named = comp && comp.chem_name ? `${comp.chem_name} (${resn})` : (resn || "?");
+  if (kind === "metal") {
+    return { category: "Metal", icon: "⚙️",
+      title: `Metal ion · ${named}${chain}`,
+      detail: "Metal ion (often catalytic or structural)." };
+  }
+  if (kind === "ion") {
+    return { category: "Ion", icon: "🔶",
+      title: `Ion · ${named}${chain}`,
+      detail: "Monatomic ion." };
+  }
+  if (kind === "ligand") {
+    return { category: "Ligand / chemical", icon: "💊",
+      title: `Ligand · ${named}${chain}${atomBit}`,
+      detail: "Bound small molecule / ligand." };
+  }
+  return { category: "Bound molecule", icon: "•",
+    title: `${resn || "Hetero"} ${atom.resi}${chain}${atomBit}`,
+    detail: "Bound hetero-group." };
+}
+
 // ---------- app state ----------
 const state = {
   pdbId: null,
@@ -37,6 +126,11 @@ const state = {
   dockSite: null,
   pocketView: null,
   evolution: null,
+  nucleicChains: null,
+  interface: null,
+  nucleic: null,
+  variants: null,
+  hla: null,
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -197,6 +291,11 @@ function applyStructure(id, data) {
   state.components = data.components;
   state.chains = data.chains;
   state.proteinAtomCount = data.protein_atom_count;
+  state.nucleicChains = data.nucleic_chains || [];
+  state.interface = null;
+  state.nucleic = null;
+  state.variants = null;
+  state.hla = null;
   state.selectedComp = null;
   state.profile = null;
   state.report = null;
@@ -219,12 +318,19 @@ function applyStructure(id, data) {
   if (mc) mc.checked = false;
   $("#evolutionContent").className = "empty";
   $("#evolutionContent").textContent = "No conservation analysis yet. Click “Analyze conservation”.";
+  ["interfaceContent", "variantContent", "hlaContent"].forEach((id) => {
+    const node = document.getElementById(id);
+    if (node) { node.className = "empty"; node.textContent = "No analysis yet."; }
+  });
 
   renderOverview(data);
   renderComponents(data.components);
   updateDockPocket();
   $("#pocketsContent").className = "empty";
   $("#pocketsContent").textContent = "No pockets detected yet. Click “Detect pockets”.";
+  const info = $("#viewerInfo");
+  if (info) { info.hidden = true; info.innerHTML = ""; }
+  setReadout("");
   initViewer(data.pdb_data);
   switchTab("overview");
 
@@ -274,6 +380,7 @@ function renderOverview(data) {
       ${cell("Resolution", m.resolution_A ? m.resolution_A + " Å" : "—")}
       ${cell("Released", m.deposited ? m.deposited.slice(0, 10) : "—")}
       ${cell("Protein chains", data.chains ? data.chains.join(", ") : "—")}
+      ${cell("Nucleic chains", data.nucleic_chains && data.nucleic_chains.length ? data.nucleic_chains.join(", ") : "—")}
       ${cell("Protein atoms", data.protein_atom_count)}
       ${cell("Bound components", data.components.length)}
       ${cell("Mol. weight", m.molecular_weight_kDa ? m.molecular_weight_kDa + " kDa" : "—")}
@@ -294,11 +401,16 @@ function renderComponents(components) {
   components.forEach((comp) => {
     const row = el("div", "comp");
     row.dataset.index = comp.index;
+    const primary = comp.chem_name
+      ? `${escapeHtml(comp.chem_name)} <span class="comp-code">${escapeHtml(comp.res_name)}</span>`
+      : escapeHtml(comp.res_name);
+    const sub = `${comp.chain}/${comp.res_seq} · ${comp.atom_count} atoms` +
+      (comp.formula ? ` · ${escapeHtml(comp.formula)}` : "");
     row.innerHTML = `
       <span class="tag ${comp.kind}">${comp.kind}</span>
       <div>
-        <div class="comp-label">${comp.res_name}</div>
-        <div class="comp-sub">${comp.chain}/${comp.res_seq} · ${comp.atom_count} atoms</div>
+        <div class="comp-label">${primary}</div>
+        <div class="comp-sub">${sub}</div>
       </div>`;
     row.addEventListener("click", () => selectComponent(comp.index));
     list.appendChild(row);
@@ -473,8 +585,38 @@ function rebuildScene(resetZoom) {
     v.addSurface($3Dmol.SurfaceType.VDW, { opacity: 0.5, color: "#d0d0d0" }, { model: 0, hetflag: false });
   }
   setupPicking(v);
+  renderLegend();
   if (resetZoom) v.zoomTo();
   v.render();
+}
+
+// Explain the current visual encoding so the user knows what the colors and
+// shapes mean. Rebuilt with the scene so it always matches what's on screen.
+function renderLegend() {
+  const box = $("#viewerLegend");
+  if (!box) return;
+  const sw = (hexNum) => `#${(hexNum || 0).toString(16).padStart(6, "0")}`;
+  const items = [`<span class="lg"><span class="lg-sw" style="background:#b3b3b3"></span>Protein (cartoon)</span>`];
+  if ((state.components || []).length)
+    items.push(`<span class="lg"><span class="lg-sw" style="background:#666"></span>Bound molecule (sticks)</span>`);
+  if (state.nucleicChains && state.nucleicChains.length)
+    items.push(`<span class="lg">🧬 Nucleic acid (chains ${escapeHtml(state.nucleicChains.join(", "))})</span>`);
+  if (state.dockPose)
+    items.push(`<span class="lg"><span class="lg-sw" style="background:#000"></span>Docked pose</span>`);
+  if (state.profile || state.dockPose)
+    ["hydrogen_bond", "salt_bridge", "hydrophobic", "aromatic", "metal_coordination"].forEach((k) =>
+      items.push(`<span class="lg"><span class="lg-sw" style="background:${sw(COLORS[k])}"></span>${TYPE_LABEL[k]}</span>`));
+
+  const mode = state.colorMode || "mono";
+  const modeNote = {
+    conservation: "Colour: conservation (blue variable → red conserved).",
+    bfactor: `Colour: B-factor / flexibility${state._bfactorRange ? ` (${state._bfactorRange[0]}–${state._bfactorRange[1]} Å²; blue rigid → red flexible)` : ""}.`,
+    chain: "Colour: one hue per protein chain.",
+    spectrum: "Colour: rainbow, N → C terminus.",
+    element: "Colour: element (CPK / Jmol).",
+  }[mode] || "";
+  box.innerHTML = `<div class="lg-row">${items.join("")}</div>` +
+    (modeNote ? `<div class="muted lg-mode">${escapeHtml(modeNote)}</div>` : "");
 }
 
 // ================= shareable / reproducible scene state =================
@@ -588,6 +730,104 @@ function atomLabel(atom) {
   return `${resId}${chain} · ${atom.atom} (${atom.elem})`;
 }
 
+// Gather human-readable context for a residue by scanning every analysis the
+// app has already computed, so click/hover share one source of truth.
+function residueContext(chain, resi, hetero, resName) {
+  const notes = [];
+  if (hetero) return notes;
+  const rid = `${chain}/${resName}${resi}`;
+  const here = (rr) => rr.chain === chain && rr.res_seq === resi;
+
+  if (state.evolution && state.evolution.residues) {
+    const r = state.evolution.residues.find(here);
+    if (r && r.conservation != null)
+      notes.push(`Conservation ${r.conservation}` +
+        (r.divergent ? " · diverged from family consensus" : ""));
+  }
+  if ((state.pockets || []).length) {
+    const p = state.pockets.find((pp) => (pp.lining_residues || []).some(here));
+    if (p) notes.push(`Lines pocket #${p.index + 1}`);
+  }
+  if (state.profile && state.profile.contact_residues) {
+    const c = state.profile.contact_residues.find(here);
+    if (c) notes.push(`Contacts ${state.selectedComp ? state.selectedComp.label : "the ligand"} (${c.types.join(", ")})`);
+  }
+  if (state.dockPose && state.dockPose.profile) {
+    const c = (state.dockPose.profile.contact_residues || []).find(here);
+    if (c) notes.push(`Contacts the docked pose (${c.types.join(", ")})`);
+  }
+  if (state.interface && state.interface.profile) {
+    const pr = state.interface.profile;
+    if ((pr.interface_residues_a || []).some(here)) notes.push("Interface · group A (paratope / groove side)");
+    else if ((pr.interface_residues_b || []).some(here)) notes.push("Interface · group B (epitope / peptide side)");
+  }
+  if (state.nucleic && state.nucleic.profile) {
+    if ((state.nucleic.profile.protein_residues || []).some(here)) notes.push("DNA/RNA-binding residue");
+  }
+  if (state.hla && state.hla.groove && state.hla.groove.available) {
+    const g = state.hla.groove;
+    if ((g.anchor_pocket_residue_ids || []).includes(rid)) notes.push("HLA anchor-pocket residue (B/F pocket)");
+    else if ((g.groove_residue_ids || []).includes(rid)) notes.push("HLA groove-lining residue");
+  }
+  if (state.variants && state.variants.mapping) {
+    const vv = (state.variants.mapping.variants || []).find((x) => x.mapped && here(x));
+    if (vv) {
+      let s = `Variant ${vv.input} maps here`;
+      const gc = ((state.variants.hla && state.variants.hla.variant_classes) || [])
+        .find((x) => x.res_id === rid);
+      if (gc) s += ` · ${gc.groove_class}`;
+      notes.push(s);
+    }
+  }
+  return notes;
+}
+
+// Live identity readout in the toolbar — tells the user what they're observing.
+function setReadout(html) {
+  const r = $("#viewerReadout");
+  if (r) r.innerHTML = html || '<span class="muted">Hover the structure to identify atoms.</span>';
+}
+
+// Persistent detail card populated on click. `comp` is the matched bound-molecule
+// component (if any), carrying resolved chemical name + chemistry.
+function showAtomInfo(info, notes, comp) {
+  const card = $("#viewerInfo");
+  if (!card) return;
+  const noteHtml = notes && notes.length
+    ? `<ul class="vinfo-notes">${notes.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
+    : "";
+
+  // Chemistry block for ligands/ions/metals (from the RCSB chemical dictionary).
+  let chemHtml = "";
+  if (comp) {
+    const rows = [];
+    if (comp.formula) rows.push(`<div><span class="muted">Formula</span> ${escapeHtml(comp.formula)}</div>`);
+    if (comp.weight) rows.push(`<div><span class="muted">Weight</span> ${escapeHtml(String(comp.weight))} Da</div>`);
+    if (comp.synonyms && comp.synonyms.length) rows.push(`<div><span class="muted">Also known as</span> ${escapeHtml(comp.synonyms.slice(0, 3).join(", "))}</div>`);
+    if (comp.smiles) rows.push(`<div class="vinfo-smiles"><span class="muted">SMILES</span> ${escapeHtml(comp.smiles)}</div>`);
+    const lookupTerm = comp.chem_name || comp.res_name;
+    chemHtml =
+      (rows.length ? `<div class="vinfo-chem">${rows.join("")}</div>` : "") +
+      `<button class="mini" id="vinfoLookup" data-q="${escapeHtml(lookupTerm)}">Look up full chemistry →</button>`;
+  }
+
+  card.hidden = false;
+  card.innerHTML =
+    `<div class="vinfo-head"><span class="vinfo-cat">${info.icon} ${escapeHtml(info.category)}</span>` +
+    `<button class="mini" id="vinfoClose">✕</button></div>` +
+    `<div class="vinfo-title">${escapeHtml(info.title)}</div>` +
+    `<div class="muted">${escapeHtml(info.detail)}</div>${noteHtml}${chemHtml}`;
+  const close = $("#vinfoClose");
+  if (close) close.addEventListener("click", () => { card.hidden = true; });
+  const lookup = $("#vinfoLookup");
+  if (lookup) lookup.addEventListener("click", () => {
+    const q = lookup.dataset.q;
+    $("#chemInput").value = q;
+    switchTab("chemical");
+    lookupChemical(q);
+  });
+}
+
 // Picking: click identifies an atom (or measures distance in Measure mode);
 // hover previews the atom under the cursor.
 function setupPicking(v) {
@@ -597,34 +837,27 @@ function setupPicking(v) {
       v.removeLabel(state._pickLabel);
       state._pickLabel = null;
     }
-    const het = atom.hetflag;
-    const base = atomLabel(atom);
-    const extras = [];
-    if (!het && state.evolution && state.evolution.residues) {
-      const r = state.evolution.residues.find(
-        (x) => x.chain === atom.chain && x.res_seq === atom.resi
-      );
-      if (r && r.conservation != null) extras.push(`conservation ${r.conservation}`);
-    }
-    if (!het && (state.pockets || []).length) {
-      const inPocket = state.pockets.find((p) =>
-        (p.lining_residues || []).some((rr) => rr.chain === atom.chain && rr.res_seq === atom.resi)
-      );
-      if (inPocket) extras.push(`lines pocket #${inPocket.index + 1}`);
-    }
-    const text = extras.length ? `${base}\n${extras.join(" · ")}` : base;
+    const info = classifyAtom(atom);
+    const notes = residueContext(atom.chain, atom.resi, atom.hetflag, (atom.resn || "").toUpperCase());
+    const comp = atom.hetflag
+      ? (state.components || []).find((c) => c.chain === atom.chain && c.res_seq === atom.resi)
+      : null;
+    const text = notes.length ? `${info.title}\n${notes.join("\n")}` : info.title;
     state._pickLabel = v.addLabel(text, _labelStyle(atom));
     v.render();
-    setStatus(`Selected ${base}` + (extras.length ? " · " + extras.join(" · ") : ""));
+    showAtomInfo(info, notes, comp);
+    setStatus(`${info.category}: ${info.title}` + (notes.length ? " · " + notes.join(" · ") : ""));
   });
 
-  // Hover preview.
+  // Hover preview — leads with the molecule category so the user knows what
+  // they're looking at, and mirrors it into the toolbar readout.
   v.setHoverable(
     {},
     true,
     (atom) => {
+      const info = classifyAtom(atom);
       if (state._hoverLabel) v.removeLabel(state._hoverLabel);
-      state._hoverLabel = v.addLabel(atomLabel(atom), {
+      state._hoverLabel = v.addLabel(`${info.icon} ${info.title}`, {
         position: { x: atom.x, y: atom.y, z: atom.z },
         backgroundColor: "#222222",
         backgroundOpacity: 0.85,
@@ -632,6 +865,7 @@ function setupPicking(v) {
         fontSize: 11,
         alignment: "bottomCenter",
       });
+      setReadout(`<span class="vread-cat">${info.icon} ${escapeHtml(info.category)}</span> · ${escapeHtml(info.title.replace(/^[^·]*·\s*/, ""))}`);
       v.render();
     },
     () => {
@@ -640,6 +874,7 @@ function setupPicking(v) {
         state._hoverLabel = null;
         v.render();
       }
+      setReadout("");
     }
   );
 }
@@ -711,7 +946,8 @@ async function selectComponent(index) {
   document.querySelectorAll(".comp").forEach((r) =>
     r.classList.toggle("active", Number(r.dataset.index) === index)
   );
-  setStatus(`Profiling atomic interactions for ${comp.label}…`, "busy");
+  const compName = comp.chem_name ? `${comp.chem_name} (${comp.res_name})` : comp.label;
+  setStatus(`Profiling atomic interactions for ${compName}…`, "busy");
   try {
     const data = await getJSON(
       `/api/interactions?pdb=${state.pdbId}&comp=${index}`
@@ -1145,10 +1381,102 @@ function buildReportSections() {
     });
   }
 
+  // --- Interface (protein-protein / peptide) ---
+  if (state.interface && state.interface.profile) {
+    const p = state.interface.profile;
+    const top = (rows) => (rows || []).slice(0, 8).map((r) => r.res_id).join(", ") || "—";
+    const cdrLines = [];
+    if (p.has_cdr_annotation) {
+      const ab = p.antibody_chains || {};
+      const scheme = (ab.scheme || "kabat").toUpperCase();
+      cdrLines.push(`CDR annotation (${scheme}): heavy=${ab.heavy || "—"}, light=${ab.light || "—"}`);
+      const cdrTally = Object.entries(p.cdr_summary || {}).sort(([a], [b]) => a.localeCompare(b));
+      if (cdrTally.length)
+        cdrLines.push(`CDR contacts: ${cdrTally.map(([l, n]) => `${l}=${n}`).join(", ")}`);
+      if (p.numbering_note) cdrLines.push(`CDR note: ${p.numbering_note}`);
+    }
+    s.push({
+      title: `Interface — ${(p.chains_a || []).join("/")} ⇄ ${(p.chains_b || []).join("/")}`,
+      rows: Object.entries(p.counts || {}).filter(([, v]) => v).map(([k, v]) => [TYPE_LABEL[k] || k, v]),
+      lines: [
+        `Contacts: ${p.interaction_total} across ${p.interface_residue_count} interface residues`,
+        `Group A (paratope/groove): ${top(p.interface_residues_a)}`,
+        `Group B (epitope/peptide): ${top(p.interface_residues_b)}`,
+        ...cdrLines,
+      ],
+    });
+  }
+
+  // --- Protein-nucleic interface ---
+  if (state.nucleic && state.nucleic.profile) {
+    const p = state.nucleic.profile;
+    const top = (rows) => (rows || []).slice(0, 8).map((r) => r.res_id).join(", ") || "—";
+    s.push({
+      title: `Protein–nucleic interface (chains ${(p.nucleic_chains || []).join(", ") || "—"})`,
+      rows: Object.entries(p.counts || {}).filter(([, v]) => v).map(([k, v]) => [TYPE_LABEL[k] || k, v]),
+      lines: [
+        `Contacts: ${p.interaction_total}`,
+        `DNA/RNA-binding residues: ${top(p.protein_residues)}`,
+        `Contacted nucleotides: ${top(p.nucleic_residues)}`,
+      ],
+    });
+  }
+
+  // --- Variants ---
+  if (state.variants && state.variants.mapping) {
+    const mp = state.variants.mapping;
+    const hlaClassOf = {};
+    ((state.variants.hla && state.variants.hla.variant_classes) || []).forEach((v) => (hlaClassOf[v.res_id] = v.groove_class));
+    const esmOf = {};
+    if (state.variants.esm && state.variants.esm.available)
+      (state.variants.esm.scored || []).forEach((x) => { if (x.scored) esmOf[x.input] = x; });
+    const rows = (mp.variants || []).map((v) => {
+      if (!v.mapped) return [v.input, "unmapped", "—", "—", "—", "—"];
+      const esm = esmOf[v.input];
+      return [
+        v.input, v.res_id, v.wt_matches_structure ? "✓" : "⚠ " + (v.structure_aa || ""),
+        v.pocket != null ? "pocket " + v.pocket : "—",
+        v.conservation != null ? v.conservation : "—",
+        (esm ? esm.effect : "") + (hlaClassOf[v.res_id] ? (esm ? " · " : "") + hlaClassOf[v.res_id] : "") || "—",
+      ];
+    });
+    const sec = {
+      title: `Variants — ${mp.mapped_count}/${mp.input_count} mapped` + (state.variants.uniprot ? ` (UniProt ${state.variants.uniprot})` : ""),
+      table: { head: ["Variant", "Residue", "WT", "Pocket", "Conserv.", "ESM / HLA"], rows },
+    };
+    s.push(sec);
+    const pop = (state.variants.population || []).filter((p) => p.available);
+    if (pop.length)
+      s.push({
+        title: "TOPMed/BRAVO allele frequency",
+        table: { head: ["Variant", "Allele freq", "Rarity"], rows: pop.map((p) => [p.input, p.allele_freq, p.rarity || "—"]) },
+      });
+  }
+
+  // --- HLA groove ---
+  const hlaData = state.hla || (state.variants && state.variants.hla ? { detection: state.variants.hla.detection, groove: state.variants.hla.groove } : null);
+  if (hlaData && hlaData.detection && hlaData.detection.is_hla) {
+    const d = hlaData.detection, g = hlaData.groove || {};
+    const rows = [
+      ["Class", d.mhc_class || "—"],
+      ["Confidence", d.confidence || "—"],
+      ["Chains", `heavy ${d.heavy_chain || (d.class2_chains || []).join("/") || "—"}` + (d.b2m_chain ? `, β2m ${d.b2m_chain}` : "") + (d.peptide_chain ? `, peptide ${d.peptide_chain}` : "")],
+    ];
+    const lines = [];
+    if (g.available) {
+      lines.push(`Peptide length ${g.peptide_length}; anchor positions P${(g.anchor_peptide_positions || []).join(", P")}`);
+      lines.push("Groove residues: " + (g.groove_residue_ids || []).slice(0, 12).join(", "));
+      if ((g.anchor_pocket_residue_ids || []).length)
+        lines.push("Anchor-pocket residues: " + g.anchor_pocket_residue_ids.join(", "));
+    }
+    const vclasses = (state.variants && state.variants.hla && state.variants.hla.variant_classes) || [];
+    if (vclasses.length)
+      lines.push("Variant→groove: " + vclasses.map((v) => `${v.res_id} ${v.groove_class}`).join("; "));
+    s.push({ title: "HLA peptide-binding groove", rows, lines });
+  }
+
   return s;
 }
-
-// Cross-module synthesis: observations that combine findings.
 function synthesizeFindings() {
   const out = [];
   const e = state.evolution;
@@ -1173,6 +1501,29 @@ function synthesizeFindings() {
     }
     if (d.docking.redock_rmsd != null && d.docking.redock_rmsd <= 2.5)
       out.push(`Redock RMSD ${d.docking.redock_rmsd} Å indicates the docking protocol reproduces the crystallographic pose for this system.`);
+  }
+  // HLA: variants that fall in an anchor pocket are the most consequential.
+  if (state.variants && state.variants.hla && state.variants.hla.variant_classes) {
+    const anchor = state.variants.hla.variant_classes.filter((v) => v.groove_class === "anchor-pocket");
+    const groove = state.variants.hla.variant_classes.filter((v) => v.groove_class === "groove-lining");
+    if (anchor.length) out.push(`Variant(s) ${anchor.map((v) => v.input || v.res_id).join(", ")} fall in an HLA anchor pocket → most likely to alter which peptides the allele presents.`);
+    else if (groove.length) out.push(`Variant(s) ${groove.map((v) => v.input || v.res_id).join(", ")} line the HLA groove → may modulate peptide presentation.`);
+  }
+  // Variants landing in a detected pocket or a ligand-contact residue.
+  if (state.variants && state.variants.mapping) {
+    const inPocket = (state.variants.mapping.variants || []).filter((v) => v.mapped && v.pocket != null);
+    if (inPocket.length) out.push(`Variant(s) ${inPocket.map((v) => v.input).join(", ")} map into a detected pocket → potential functional/binding-site impact.`);
+  }
+  // Interface epitope conservation, when both were run.
+  if (state.interface && state.interface.profile && state.evolution && state.evolution.residues) {
+    const consOf = {};
+    state.evolution.residues.forEach((r) => { if (r.conservation != null) consOf[`${r.chain}/${r.res_seq}`] = r.conservation; });
+    const epi = (state.interface.profile.interface_residues_b || []);
+    const scored = epi.map((r) => consOf[`${r.chain}/${r.res_seq}`]).filter((x) => x != null);
+    if (scored.length >= 3) {
+      const mean = scored.reduce((a, b) => a + b, 0) / scored.length;
+      out.push(`Interface epitope residues are ${mean >= 0.55 ? "largely conserved → a constrained, possibly functional interface" : mean <= 0.35 ? "largely variable → a fast-evolving / specificity-determining interface" : "of mixed conservation"}.`);
+    }
   }
   if (!out.length) out.push("Run more modules (pockets + evolution + docking) to generate cross-analysis synthesis.");
   return out;
@@ -1230,6 +1581,18 @@ function reportLimitations() {
   if (state.screen && (state.screen.results || []).length)
     L.push(
       "Virtual-screen ranking uses a size-dependent raw score; compare per-atom (ligand efficiency) across different-sized molecules, and all docking limitations above apply to every ranked pose."
+    );
+  if ((state.interface && state.interface.profile) || (state.nucleic && state.nucleic.profile))
+    L.push(
+      "Interface mapping is heavy-atom geometry between chain groups (no energetics, no induced fit); chain grouping is heuristic/user-set. CDR annotation requires Kabat-compatible residue numbering as deposited — renumber with ANARCI for reliable CDR calls on non-Kabat structures."
+    );
+  if (state.variants && state.variants.mapping)
+    L.push(
+      "Variant mapping is a structural localization via UniProt→structure alignment, not a pathogenicity call; only modeled residues map, BRAVO frequencies are public aggregate values (no genotypes/controlled data), and ESM scores (when present) are sequence-model predictions, not affinities."
+    );
+  if ((state.hla && state.hla.detection && state.hla.detection.is_hla) || (state.variants && state.variants.hla))
+    L.push(
+      "HLA groove/anchor analysis is structural interpretation only — not peptide-binding-affinity or immunogenicity prediction, and not HLA typing; anchor assignment is class-I-centric (P2 / C-terminus)."
     );
   return L;
 }
@@ -1875,7 +2238,7 @@ function exportSessionJSON() {
   }
   const m = state.meta || {};
   const session = {
-    schema: "snaclex-session/1",
+    schema: "snaclex-session/2",
     tool: "SnaCleX",
     exported_utc: new Date().toISOString(),
     research_only: true,
@@ -1883,7 +2246,9 @@ function exportSessionJSON() {
       pdb_id: m.pdb_id || state.pdbId,
       metadata: state.meta || null,
       chains: state.chains || null,
+      nucleic_chains: state.nucleicChains || null,
       protein_atom_count: state.proteinAtomCount,
+      components: state.components || null,
     },
     interactions: state.profile
       ? { profile: state.profile, report: state.report }
@@ -1896,6 +2261,10 @@ function exportSessionJSON() {
     docking: state.dockData || null,
     screening: state.screen || null,
     chemical: state.chemical || null,
+    interface: state.interface || null,
+    nucleic_interface: state.nucleic || null,
+    variants: state.variants || null,
+    hla: state.hla || null,
   };
   downloadBlob(
     JSON.stringify(session, null, 2),
@@ -2025,6 +2394,336 @@ function renderBenchmark(r, label) {
 }
 
 // ================= wiring =================
+// ================= interface / nucleic =================
+
+// CDR badge colours (matching the loop mnemonic colour convention).
+const CDR_COLOR = {
+  H1: "#4e79a7", H2: "#f28e2b", H3: "#e15759",
+  L1: "#76b7b2", L2: "#59a14f", L3: "#edc948",
+};
+
+function _cdrBadge(cdr) {
+  if (!cdr) return "";
+  const bg = CDR_COLOR[cdr] || "#888";
+  return ` <span class="cdr-badge" style="background:${bg}">${escapeHtml(cdr)}</span>`;
+}
+
+function _interfaceResTable(title, rows, hasCdr) {
+  if (!rows || !rows.length) return `<div class="muted">${escapeHtml(title)}: no contact residues.</div>`;
+  const cdrCol = hasCdr ? "<th>CDR</th>" : "";
+  const trs = rows
+    .map(
+      (r) => {
+        const cdrCell = hasCdr
+          ? `<td>${r.cdr ? _cdrBadge(r.cdr) : '<span class="muted">FR</span>'}</td>`
+          : "";
+        return (
+          `<tr data-focus="1" data-chain="${escapeHtml(r.chain)}" data-resi="${r.res_seq}" data-label="${escapeHtml(r.res_id)}">` +
+          `<td>${escapeHtml(r.res_id)}</td><td>${r.total}</td>` +
+          `<td>${escapeHtml((r.types || []).join(", "))}</td><td>${r.min_distance} Å</td>${cdrCell}</tr>`
+        );
+      }
+    )
+    .join("");
+  return `<div class="section-h">${escapeHtml(title)}</div>` +
+    `<table class="data-table"><thead><tr><th>Residue</th><th>Contacts</th>` +
+    `<th>Types</th><th>Closest</th>${cdrCol}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function renderInterface(data) {
+  const c = $("#interfaceContent");
+  c.className = "";
+  const p = data.profile;
+  const counts = p.counts || {};
+  const hasCdr = !!p.has_cdr_annotation;
+  const chipRow = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `<span class="chip">${escapeHtml(k.replace(/_/g, " "))}: ${n}</span>`)
+    .join(" ");
+  let head, aTitle, aRows, bTitle, bRows;
+  if (p.mode === "protein-nucleic") {
+    head = `Protein ⇄ nucleic interface · ${p.interaction_total} contacts`;
+    aTitle = "DNA/RNA-binding protein residues"; aRows = p.protein_residues;
+    bTitle = "Contacted nucleotides"; bRows = p.nucleic_residues;
+  } else {
+    head = `Interface ${(p.chains_a || []).join("/")} ⇄ ${(p.chains_b || []).join("/")} · ${p.interaction_total} contacts`;
+    aTitle = `Group A — paratope/groove (${(p.chains_a || []).join(", ")})`; aRows = p.interface_residues_a;
+    bTitle = `Group B — epitope/peptide (${(p.chains_b || []).join(", ")})`; bRows = p.interface_residues_b;
+  }
+
+  // CDR summary section.
+  let cdrHTML = "";
+  if (hasCdr) {
+    const ab = p.antibody_chains || {};
+    const scheme = (ab.scheme || "kabat").toUpperCase();
+    const schemeLabel = `${scheme} numbering`;
+    const cdrChips = Object.entries(p.cdr_summary || {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([loop, n]) => {
+        const bg = CDR_COLOR[loop] || "#888";
+        return `<span class="chip" style="background:${bg};color:#fff">${escapeHtml(loop)}: ${n} contact${n !== 1 ? "s" : ""}</span>`;
+      })
+      .join(" ");
+    const autoNote = p.antibody_auto_detected
+      ? ' <span class="muted">(chains auto-detected)</span>' : "";
+    const chainNote = [
+      ab.heavy ? `Heavy: ${escapeHtml(ab.heavy)}` : null,
+      ab.light ? `Light: ${escapeHtml(ab.light)}` : null,
+    ].filter(Boolean).join(" · ");
+    cdrHTML = `<div class="cdr-panel">
+      <span class="cdr-scheme-label">${escapeHtml(schemeLabel)}</span>${autoNote}
+      <span class="muted" style="margin-left:8px">${escapeHtml(chainNote)}</span>
+      <div style="margin-top:6px">${cdrChips || '<span class="muted">No CDR contacts in this interface.</span>'}</div>
+      ${p.numbering_note ? `<div class="cdr-warning">${escapeHtml(p.numbering_note)}</div>` : ""}
+    </div>`;
+  }
+
+  c.innerHTML =
+    `<div class="title-block"><h3>${escapeHtml(head)}</h3></div>` +
+    `<div class="chips">${chipRow || '<span class="muted">No contacts found.</span>'}</div>` +
+    cdrHTML +
+    _interfaceResTable(aTitle, aRows, hasCdr) + _interfaceResTable(bTitle, bRows, false) +
+    provenanceCardHTML(data.methods);
+}
+
+async function profileInterface() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  const clean = (v) => (v || "").trim().toUpperCase().replace(/\s+/g, "");
+  const a = clean($("#ifaceA").value), b = clean($("#ifaceB").value);
+  const heavy = clean($("#ifaceHeavy").value), light = clean($("#ifaceLight").value);
+  const scheme = ($("#ifaceScheme").value || "kabat").toLowerCase();
+  setStatus("Profiling protein interface…", "busy");
+  $("#interfaceBtn").disabled = true;
+  try {
+    let url = `/api/interface?pdb=${encodeURIComponent(state.pdbId)}`;
+    if (a) url += `&a=${encodeURIComponent(a)}`;
+    if (b) url += `&b=${encodeURIComponent(b)}`;
+    if (heavy) url += `&heavy=${encodeURIComponent(heavy)}`;
+    if (light) url += `&light=${encodeURIComponent(light)}`;
+    if (scheme && scheme !== "kabat") url += `&scheme=${encodeURIComponent(scheme)}`;
+    const data = await getJSON(url);
+    state.interface = data;
+    renderInterface(data);
+    setStatus(`Interface profiled: ${data.profile.interaction_total} contacts.`);
+  } catch (err) {
+    setStatus(`Interface analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#interfaceBtn").disabled = false;
+  }
+}
+
+async function profileNucleic() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  setStatus("Profiling protein–nucleic contacts…", "busy");
+  $("#nucleicBtn").disabled = true;
+  const c = $("#interfaceContent");
+  try {
+    const data = await getJSON(`/api/nucleic?pdb=${encodeURIComponent(state.pdbId)}`);
+    if (!data.available) {
+      c.className = "empty";
+      c.textContent = data.reason || "No nucleic-acid chains in this structure.";
+      setStatus(data.reason || "No nucleic acids found.");
+      return;
+    }
+    state.nucleic = data;
+    renderInterface(data);
+    setStatus(`Protein–nucleic interface: ${data.profile.interaction_total} contacts.`);
+  } catch (err) {
+    setStatus(`Nucleic analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#nucleicBtn").disabled = false;
+  }
+}
+
+// ================= variants =================
+function renderVariants(res) {
+  const c = $("#variantContent");
+  c.className = "";
+  const m = res.mapping || {};
+  const hlaClassOf = {};
+  if (res.hla && res.hla.variant_classes)
+    res.hla.variant_classes.forEach((v) => { hlaClassOf[v.res_id] = v.groove_class; });
+  const esmOf = {};
+  if (res.esm && res.esm.available)
+    (res.esm.scored || []).forEach((s) => { if (s.scored) esmOf[s.input] = s; });
+
+  const rows = (m.variants || [])
+    .map((v) => {
+      if (!v.mapped)
+        return `<tr class="muted"><td>${escapeHtml(v.input)}</td>` +
+          `<td colspan="6">unmapped — ${escapeHtml(v.reason || "")}</td></tr>`;
+      const esm = esmOf[v.input];
+      const gnote = v.source === "genomic" && v.gene
+        ? ` <span class="muted">${escapeHtml(v.gene)}${v.consequence ? " · " + escapeHtml(v.consequence) : ""}</span>`
+        : "";
+      return `<tr data-focus="1" data-chain="${escapeHtml(v.chain)}" data-resi="${v.res_seq}" data-label="${escapeHtml(v.res_id)}">` +
+        `<td>${escapeHtml(v.input)}${gnote}</td>` +
+        `<td>${escapeHtml(v.res_id)}</td>` +
+        `<td>${v.wt_matches_structure ? "✓" : "⚠ " + escapeHtml(v.structure_aa)}</td>` +
+        `<td>${v.pocket != null ? "pocket " + v.pocket : "—"}</td>` +
+        `<td>${v.conservation != null ? v.conservation.toFixed(2) : "—"}</td>` +
+        `<td>${esm ? esm.llr + " (" + escapeHtml(esm.effect) + ")" : "—"}</td>` +
+        `<td>${hlaClassOf[v.res_id] ? escapeHtml(hlaClassOf[v.res_id]) : "—"}</td></tr>`;
+    })
+    .join("");
+
+  let html = `<div class="title-block"><h3>${m.mapped_count}/${m.input_count} variants mapped</h3>` +
+    (res.uniprot ? `<span class="pdbid">UniProt ${escapeHtml(res.uniprot)}</span>` : "") + `</div>` +
+    `<table class="data-table"><thead><tr><th>Variant</th><th>Residue</th><th>WT</th>` +
+    `<th>Pocket</th><th>Conserv.</th><th>ESM</th><th>HLA groove</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
+
+  if (res.population && res.population.length) {
+    const pr = res.population
+      .map((p) =>
+        `<tr><td>${escapeHtml(p.input)}</td><td>` +
+        (p.available
+          ? `${p.allele_freq != null ? p.allele_freq : "—"} <span class="muted">(${escapeHtml(p.rarity || "")})</span>`
+          : escapeHtml(p.reason || "unavailable")) +
+        `</td></tr>`)
+      .join("");
+    html += `<div class="section-h">TOPMed/BRAVO allele frequency</div>` +
+      `<table class="data-table"><thead><tr><th>Variant</th><th>Frequency</th></tr></thead>` +
+      `<tbody>${pr}</tbody></table>`;
+  }
+  if (res.population && res.population.length && res.vep_enabled === false)
+    html += `<div class="muted" style="margin-top:8px">Genomic variants show allele frequency only — set <code>SNACLEX_ENABLE_VEP</code> to map them onto structure residues via Ensembl VEP.</div>`;
+  if (res.esm && !res.esm.available)
+    html += `<div class="muted" style="margin-top:8px">ESM variant scoring: ${escapeHtml(res.esm.reason || "unavailable")}.</div>`;
+  html += provenanceCardHTML(res.methods);
+  c.innerHTML = html;
+}
+
+async function runVariants() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  const raw = ($("#variantInput").value || "").split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+  if (!raw.length) { setStatus("Enter at least one variant (e.g. R273H).", "error"); return; }
+  const uni = ($("#variantUniprot").value || "").trim();
+  setStatus(`Mapping ${raw.length} variant(s)…`, "busy");
+  $("#variantBtn").disabled = true;
+  try {
+    const params = { pdb: state.pdbId, variants: raw };
+    if (uni) params.uniprot = uni;
+    const res = await submitJob("variants", params);
+    state.variants = res;
+    renderVariants(res);
+    setStatus(`Mapped ${res.mapping.mapped_count}/${res.mapping.input_count} variant(s).`);
+  } catch (err) {
+    setStatus(`Variant mapping failed: ${err.message}`, "error");
+  } finally {
+    $("#variantBtn").disabled = false;
+  }
+}
+
+// ================= HLA =================
+function renderHla(data) {
+  const c = $("#hlaContent");
+  c.className = "";
+  const d = data.detection || {};
+  if (!d.is_hla) {
+    c.innerHTML = `<div class="empty">Not detected as an HLA/MHC complex.` +
+      (d.signals && d.signals.length ? " Signals: " + escapeHtml(d.signals.join("; ")) : "") + `</div>`;
+    return;
+  }
+  const g = data.groove || {};
+  let html = `<div class="title-block"><h3>HLA class ${escapeHtml(d.mhc_class || "?")} · confidence ${escapeHtml(d.confidence)}</h3></div>`;
+  html += `<div class="chips"><span class="chip">heavy: ${escapeHtml(d.heavy_chain || (d.class2_chains || []).join("/") || "—")}</span>`;
+  if (d.b2m_chain) html += `<span class="chip">β2m: ${escapeHtml(d.b2m_chain)}</span>`;
+  html += `<span class="chip">peptide: ${escapeHtml(d.peptide_chain || "—")}</span></div>`;
+  if (d.signals && d.signals.length) html += `<div class="muted">${escapeHtml(d.signals.join("; "))}</div>`;
+  if (g.available) {
+    const anchorSet = new Set(g.anchor_pocket_residue_ids || []);
+    const rows = (g.groove_residues || [])
+      .map((r) =>
+        `<tr data-focus="1" data-chain="${escapeHtml(r.chain)}" data-resi="${r.res_seq}" data-label="${escapeHtml(r.res_id)}">` +
+        `<td>${escapeHtml(r.res_id)}</td>` +
+        `<td>${anchorSet.has(r.res_id) ? "<b>anchor</b>" : "groove"}</td>` +
+        `<td>${r.total}</td><td>${escapeHtml((r.types || []).join(", "))}</td></tr>`)
+      .join("");
+    html += `<div class="section-h">Groove residues (peptide contacts; anchors = B/F pockets)</div>` +
+      `<p class="muted">Peptide length ${g.peptide_length}` +
+      ((g.anchor_peptide_positions || []).length ? `; anchor positions P${(g.anchor_peptide_positions).join(", P")}.` : ".") + `</p>` +
+      `<table class="data-table"><thead><tr><th>Residue</th><th>Pocket</th><th>Contacts</th>` +
+      `<th>Types</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } else {
+    html += `<div class="muted">${escapeHtml(g.reason || "No groove (peptide not modeled).")}</div>`;
+  }
+  if (state.variants && state.variants.hla && state.variants.hla.variant_classes && state.variants.hla.variant_classes.length)
+    html += `<div class="muted" style="margin-top:8px">Variant→groove classification is shown in the Variants tab.</div>`;
+  else
+    html += `<div class="muted" style="margin-top:8px">Map variants in the Variants tab to classify them against this groove.</div>`;
+
+  // Expression context (CELL×GENE) for the HLA gene(s).
+  const genes = d.genes || [];
+  if (genes.length) {
+    html += `<div class="section-h">Tissue / cell expression</div>` +
+      `<div class="hint" style="margin-bottom:6px">Which cell types express ${escapeHtml(genes.join(", "))} (CZ CELL×GENE).</div>` +
+      `<button class="mini" id="exprBtn" data-gene="${escapeHtml(genes[0])}">Show expression context →</button>` +
+      `<div id="exprContent"></div>`;
+  }
+  html += provenanceCardHTML(data.methods);
+  c.innerHTML = html;
+
+  const exprBtn = $("#exprBtn");
+  if (exprBtn) exprBtn.addEventListener("click", () => loadExpression(exprBtn.dataset.gene));
+}
+
+async function loadExpression(gene) {
+  const box = $("#exprContent");
+  if (!box || !gene) return;
+  box.innerHTML = `<span class="muted">Loading expression for ${escapeHtml(gene)}…</span>`;
+  try {
+    const d = await getJSON(`/api/expression?gene=${encodeURIComponent(gene)}`);
+    let h = `<div style="margin-top:6px"><a href="${escapeHtml(d.link)}" target="_blank" rel="noopener">Open ${escapeHtml(gene)} in CELL×GENE Gene Expression ↗</a></div>`;
+    if (d.available && (d.cell_types || []).length) {
+      const rows = d.cell_types.map((ct) =>
+        `<tr><td>${escapeHtml(ct.cell_type)}</td><td>${ct.mean_expr}</td>` +
+        `<td>${ct.pct_cells != null ? Math.round(ct.pct_cells * 100) + "%" : "—"}</td></tr>`).join("");
+      h += `<table class="data-table" style="margin-top:8px"><thead><tr><th>Cell type</th>` +
+        `<th>Mean expr</th><th>% cells</th></tr></thead><tbody>${rows}</tbody></table>`;
+    } else {
+      h += `<div class="muted" style="margin-top:6px">${escapeHtml(d.reason || "Summary unavailable.")}</div>`;
+    }
+    box.innerHTML = h;
+  } catch (err) {
+    box.innerHTML = `<div class="muted" style="margin-top:6px">Expression lookup failed: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function runHla() {
+  if (!state.pdbId) { setStatus("Load a structure first.", "error"); return; }
+  setStatus("Analyzing HLA groove…", "busy");
+  $("#hlaBtn").disabled = true;
+  try {
+    const data = await getJSON(`/api/hla?pdb=${encodeURIComponent(state.pdbId)}`);
+    state.hla = data;
+    renderHla(data);
+    setStatus(data.detection.is_hla ? "HLA groove analyzed." : "Not detected as an HLA/MHC complex.");
+  } catch (err) {
+    setStatus(`HLA analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#hlaBtn").disabled = false;
+  }
+}
+
+async function loadHlaCases() {
+  try {
+    const data = await getJSON("/api/hla/cases");
+    const box = $("#hlaCases");
+    if (!box) return;
+    box.innerHTML = (data.cases || [])
+      .map((cs) =>
+        `<button class="ex hla-case" data-pdb="${escapeHtml(cs.pdb)}" title="${escapeHtml(cs.note)}">` +
+        `${escapeHtml(cs.allele)} <span class="muted">(${escapeHtml(cs.pdb)})</span></button>`)
+      .join(" ");
+    box.querySelectorAll(".hla-case").forEach((b) =>
+      b.addEventListener("click", () => { loadStructure(b.dataset.pdb); switchTab("hla"); }));
+  } catch (err) {
+    const box = $("#hlaCases");
+    if (box) box.textContent = "Could not load curated cases.";
+  }
+}
+
 function init() {
   $("#loadBtn").addEventListener("click", () => smartLoad($("#pdbInput").value));
   $("#pdbInput").addEventListener("keydown", (e) => {
@@ -2053,6 +2752,11 @@ function init() {
   });
   $("#detectBtn").addEventListener("click", detectPockets);
   $("#evoBtn").addEventListener("click", runEvolution);
+  $("#interfaceBtn").addEventListener("click", profileInterface);
+  $("#nucleicBtn").addEventListener("click", profileNucleic);
+  $("#variantBtn").addEventListener("click", runVariants);
+  $("#hlaBtn").addEventListener("click", runHla);
+  loadHlaCases();
   $("#colorMode").addEventListener("change", (e) => {
     const mode = e.target.value;
     if (mode === "conservation" && !state.evolution) {
