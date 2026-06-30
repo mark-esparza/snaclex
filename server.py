@@ -326,18 +326,25 @@ def _get_evolution(pdb_id: str) -> dict | None:
     return evo
 
 
-_UNIPROT_CACHE: dict[str, list] = {}
+_UNIPROT_CACHE: dict[str, tuple] = {}   # pid → (result_list, timestamp)
+_UNIPROT_FAIL_TTL = 300.0               # retry failed lookups after 5 min
 
 
 def _get_uniprots(pdb_id: str) -> list:
     pid = _norm_id(pdb_id)
-    if pid in _UNIPROT_CACHE:
-        return _UNIPROT_CACHE[pid]
+    now = time.monotonic()
+    cached = _UNIPROT_CACHE.get(pid)
+    if cached is not None:
+        result, ts = cached
+        # Successful hits are cached permanently; failures expire after TTL
+        # so a temporary network outage doesn't permanently hide UniProt data.
+        if result or (now - ts) < _UNIPROT_FAIL_TTL:
+            return result
     try:
         accs = rcsb.fetch_uniprot_accessions(pid)
     except FetchError:
         accs = []
-    _UNIPROT_CACHE[pid] = accs
+    _UNIPROT_CACHE[pid] = (accs, now)
     return accs
 
 
@@ -803,17 +810,25 @@ def run_variants_job(params: dict) -> dict:
     _text, structure, meta = _load_structure(pdb_id)
     accs = [acc_override] if acc_override else _get_uniprots(pdb_id)
 
-    uniprot_seq, acc_used = "", None
+    uniprot_seq, acc_used, seq_fetch_failed = "", None, False
     for acc in accs:
         try:
             seq = variants.fetch_uniprot_sequence(acc)
         except FetchError:
             seq = ""
+            seq_fetch_failed = True
         if seq:
             uniprot_seq, acc_used = seq, acc
+            seq_fetch_failed = False
             break
 
     mapping = variants.annotate(structure, protein_inputs, uniprot_seq)
+    # If the sequence fetch failed (network error, not "no accession"), mark all
+    # protein variants with a clearer reason than "position not covered".
+    if seq_fetch_failed and not uniprot_seq:
+        for v in mapping.get("variants", []):
+            if not v.get("mapped") and v.get("reason") == "position not covered by the structure's modeled residues":
+                v["reason"] = "UniProt sequence could not be fetched (network error) — retry later"
 
     # Genomic input -> protein consequence (Ensembl VEP, env-gated) -> residue.
     # Merged into the same variant list so it gets the same enrichment + HLA
@@ -961,7 +976,9 @@ class Handler(BaseHTTPRequestHandler):
             path = "/index.html"
         rel = path.lstrip("/")
         full = os.path.normpath(os.path.join(WEB_DIR, rel))
-        if not full.startswith(WEB_DIR) or not os.path.isfile(full):
+        # Use WEB_DIR + sep so a sibling directory whose name begins with "web"
+        # (e.g. web_backup/) cannot pass the startswith check.
+        if not full.startswith(WEB_DIR + os.sep) or not os.path.isfile(full):
             self._status = 404
             self.send_error(404, "Not found")
             return
@@ -1268,7 +1285,12 @@ class Handler(BaseHTTPRequestHandler):
         b = clean_text((qs.get("b") or [""])[0], max_len=64)
         heavy_ch = clean_text((qs.get("heavy") or [""])[0], max_len=8) or None
         light_ch = clean_text((qs.get("light") or [""])[0], max_len=8) or None
-        scheme = clean_text((qs.get("scheme") or [""])[0], max_len=16) or "kabat"
+        scheme = (clean_text((qs.get("scheme") or [""])[0], max_len=16) or "kabat").lower()
+        if scheme not in antibody.SCHEMES:
+            return self._send_error_json(
+                f"Unknown CDR scheme '{scheme}'; accepted values: "
+                + ", ".join(sorted(antibody.SCHEMES))
+            )
         if not pdb_id:
             return self._send_error_json("Missing 'pdb' parameter")
         _text, structure, meta = _load_structure(pdb_id)

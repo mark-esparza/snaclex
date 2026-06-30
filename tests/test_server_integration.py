@@ -493,6 +493,55 @@ class TestServerIntegration(unittest.TestCase):
             else:
                 self.fail("variants job did not finish")
 
+    def test_interface_bad_cdr_scheme_returns_400(self):
+        """Unknown CDR scheme must return 400 rather than silently falling back."""
+        s = self._interface_structure()
+        meta = {"pdb_id": "IFC2", "title": "complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/interface?pdb=IFC2&a=A&b=B&scheme=bogus")
+        self.assertEqual(resp.status, 400)
+        data = json.loads(body)
+        self.assertIn("error", data)
+
+    def test_interface_cdr_annotation_with_scheme(self):
+        """Valid CDR scheme with explicit heavy/light chain returns annotated profile."""
+        s = self._interface_structure()
+        meta = {"pdb_id": "IFC3", "title": "complex"}
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)):
+            resp, body = self._get("/api/interface?pdb=IFC3&a=A&b=B&heavy=A&scheme=imgt")
+        self.assertEqual(resp.status, 200)
+        data = json.loads(body)
+        self.assertTrue(data["profile"]["has_cdr_annotation"])
+        self.assertEqual(data["profile"]["antibody_chains"]["scheme"], "imgt")
+
+    def test_uniprot_failure_cache_retries_after_ttl(self):
+        """A failed UniProt lookup should be retried after UNIPROT_FAIL_TTL, not cached forever."""
+        import time as time_mod
+        server._UNIPROT_CACHE.clear()
+        pid = "FAIL"
+        with mock.patch.object(server.rcsb, "fetch_uniprot_accessions",
+                               side_effect=server.FetchError("down")):
+            result1 = server._get_uniprots(pid)
+        self.assertEqual(result1, [])
+        # The failure is cached — should return immediately without retrying
+        with mock.patch.object(server.rcsb, "fetch_uniprot_accessions",
+                               return_value=["P99999"]) as mock_fetch:
+            result2 = server._get_uniprots(pid)
+        self.assertEqual(result2, [])
+        mock_fetch.assert_not_called()  # returned from cache, no retry yet
+
+        # Expire the failure TTL by backdating the cached timestamp
+        cached_result, _ts = server._UNIPROT_CACHE[pid]
+        server._UNIPROT_CACHE[pid] = (cached_result, time_mod.monotonic() - server._UNIPROT_FAIL_TTL - 1)
+
+        with mock.patch.object(server.rcsb, "fetch_uniprot_accessions",
+                               return_value=["P99999"]) as mock_fetch2:
+            result3 = server._get_uniprots(pid)
+        mock_fetch2.assert_called_once()  # retry happened
+        self.assertEqual(result3, ["P99999"])
+
 
 def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):
     return (f"{rec:<6}{serial:>5} {name:<4} {res:>3} {chain}{seq:>4}    "

@@ -126,7 +126,8 @@ def detect_vhvl_chains(structure) -> dict:
 
     if fab_h_cands and fab_l_cands:
         heavy = pick(fab_h_cands, _KABAT_H)
-        light = pick([c for c in fab_l_cands if c[0] != heavy], _KABAT_L) if len(fab_l_cands) > 1 or (fab_l_cands and fab_l_cands[0][0] != heavy) else (pick(fab_l_cands, _KABAT_L) if fab_l_cands else None)
+        l_cands = [c for c in fab_l_cands if c[0] != heavy]
+        light = pick(l_cands, _KABAT_L) if l_cands else None
         conf = "high"
         notes.append(
             f"Fab-length chains detected (H~{lengths[heavy]}, L~{lengths[light]} residues)"
