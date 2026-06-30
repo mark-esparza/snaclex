@@ -34,6 +34,7 @@ const state = {
   screen: null,
   methods: null,
   pockets: [],
+  cdrLoops: [],
   dockSite: null,
   pocketView: null,
   evolution: null,
@@ -205,6 +206,7 @@ function applyStructure(id, data) {
   state.dockPose = null;
   state.methods = null;
   state.pockets = [];
+  state.cdrLoops = data.cdr_loops || [];
   state.dockSite = null;
   state.pocketView = null;
   state.evolution = null;
@@ -230,9 +232,11 @@ function applyStructure(id, data) {
 
   const ligCount = data.components.filter((c) => c.kind === "ligand").length;
   const label = data.metadata && data.metadata.uploaded ? "Uploaded structure" : id;
+  const cdrCount = (data.cdr_loops || []).length;
+  const cdrNote = cdrCount ? ` · ${cdrCount} antibody CDR loop(s) detected (see Overview).` : "";
   setStatus(
     `Loaded ${label}: ${data.protein_atom_count} protein atoms, ` +
-      `${data.components.length} bound component(s) (${ligCount} ligand-like). ` +
+      `${data.components.length} bound component(s) (${ligCount} ligand-like).${cdrNote}` +
       `Pick a molecule on the left to profile interactions.`
   );
 }
@@ -264,6 +268,21 @@ function renderOverview(data) {
     `<div class="meta-cell"><div class="k">${k}</div><div class="v">${
       v ?? "—"
     }</div></div>`;
+  const cdrs = data.cdr_loops || [];
+  const cdrHtml = cdrs.length
+    ? `<div class="section-h" style="margin-top:18px">Antibody CDR loops detected</div>
+       <table class="int-table" style="margin-top:6px">
+         <thead><tr><th>Loop</th><th>Chain</th><th>Residues</th><th>Sequence</th><th>Confidence</th></tr></thead>
+         <tbody>${cdrs.map((l) => `<tr>
+           <td><b>${l.name}</b></td>
+           <td>${l.chain}</td>
+           <td>${l.start_res_seq}–${l.end_res_seq}</td>
+           <td><code>${l.sequence}</code></td>
+           <td class="hint">${l.confidence}</td>
+         </tr>`).join("")}</tbody>
+       </table>
+       <div class="hint" style="margin-top:6px">Heuristic Kabat/Chothia-style annotation — CDR3 is anchored on the conserved Cys…[W/F]GxG motif (high confidence); CDR1/2 are fixed offsets from the Trp anchor (approximate). Not a substitute for full germline alignment (ANARCI/IMGT).</div>`
+    : "";
   c.innerHTML = `
     <div class="title-block">
       <h3>${m.title || "Untitled structure"}</h3>
@@ -278,7 +297,7 @@ function renderOverview(data) {
       ${cell("Bound components", data.components.length)}
       ${cell("Mol. weight", m.molecular_weight_kDa ? m.molecular_weight_kDa + " kDa" : "—")}
       ${cell("Deposited atoms", m.deposited_atom_count)}
-    </div>`;
+    </div>${cdrHtml}`;
 }
 
 function renderComponents(components) {
@@ -1037,6 +1056,18 @@ function buildReportSections() {
         ["Bound components", (state.components || []).length],
       ],
       list: (state.components || []).map((c) => `${c.res_name} (${c.kind}, ${c.chain}/${c.res_seq})`),
+    });
+  }
+
+  // --- Antibody CDR loops ---
+  if ((state.cdrLoops || []).length) {
+    s.push({
+      title: `Antibody CDR loops (${state.cdrLoops.length})`,
+      table: {
+        head: ["Loop", "Chain", "Start", "End", "Sequence", "Confidence"],
+        rows: state.cdrLoops.map((l) => [l.name, l.chain, l.start_res_seq, l.end_res_seq, l.sequence, l.confidence]),
+      },
+      lines: ["Heuristic Kabat/Chothia-style annotation. CDR3 anchored on conserved Cys…[W/F]GxG motif (high confidence); CDR1/2 approximate. Not a substitute for ANARCI/IMGT."],
     });
   }
 
