@@ -95,7 +95,9 @@ MAX_UPLOAD_BYTES = 5_000_000
 
 def _norm_id(pdb_id: str) -> str:
     """Normalize a structure id: pass through upload ids, else validate as PDB."""
-    if pdb_id in _UPLOAD_CACHE:
+    with _UPLOAD_LOCK:
+        is_upload = pdb_id in _UPLOAD_CACHE
+    if is_upload:
         return pdb_id
     return rcsb.normalize_pdb_id(pdb_id)
 
@@ -983,7 +985,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_error_json("Missing 'pdb' parameter")
 
         # Uploaded structures / per-chain subsets are already small and cached.
-        if pdb_id in _UPLOAD_CACHE:
+        with _UPLOAD_LOCK:
+            is_upload = pdb_id in _UPLOAD_CACHE
+        if is_upload:
             text, structure, meta = _load_structure(pdb_id)
             return self._analyze_payload(pdb_id, structure, meta, text)
 
