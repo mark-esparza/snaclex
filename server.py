@@ -29,6 +29,7 @@ import datetime
 
 from snaclex import __version__ as SNACLEX_VERSION
 from snaclex import (
+    antibody,
     apidocs,
     benchmark,
     chembl,
@@ -971,6 +972,7 @@ class Handler(BaseHTTPRequestHandler):
             "chains": structure.chains,
             "protein_atom_count": len(structure.protein_atoms),
             "components": _components_json(structure),
+            "cdr_loops": antibody.detect_cdrs_json(structure),
             "pdb_data": text,
         })
 

@@ -26,6 +26,8 @@ _ENDPOINTS = [
         "params": {"pdb": "4-char PDB ID or upload id (required)",
                    "chain": "optional chain id to load just that chain"},
         "returns": "id, metadata, chains, components, protein_atom_count, "
+                   "cdr_loops (heuristic antibody CDR1/2/3 loops per chain, "
+                   "empty unless a chain looks like an Ig variable domain), "
                    "pdb_data. For assemblies over the atom limit (no chain "
                    "given): {too_large, n_atoms, limit, chains:[{chain, "
                    "atom_count}]} so a chain can be chosen.",
