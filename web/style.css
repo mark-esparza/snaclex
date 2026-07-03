@@ -241,6 +241,19 @@ table.data tr:hover td { background: var(--soft); }
 .scorebar > i { display: block; height: 100%; background: var(--ink); }
 .pocket-res { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }
 
+/* ---------- antibody ---------- */
+.ab-badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; padding: 3px 8px; border-radius: var(--radius); background: var(--ink); color: #fff; margin-left: 8px; vertical-align: middle; }
+.ab-type { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: var(--radius); border: 1px solid var(--line-strong); white-space: nowrap; }
+.ab-type.ab-VH { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ab-type.ab-VL { background: #fff; color: var(--ink); border-color: var(--ink); }
+.ab-type.ab-heavy_constant, .ab-type.ab-light_constant { background: var(--soft); color: var(--muted); }
+.ab-type.ab-other { background: transparent; color: var(--muted); border-style: dashed; }
+.cdr-legend { display: flex; gap: 16px; font-size: 12px; color: var(--muted); margin: 4px 0 12px; }
+.cdr-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.cdr-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+tr.liab-cdr { background: var(--soft); }
+tr.liab-cdr td { font-weight: 500; }
+
 /* ---------- docking ---------- */
 .dock-controls { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 18px; background: var(--soft); }
 .dock-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }

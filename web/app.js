@@ -16,6 +16,9 @@ const TYPE_LABEL = {
   aromatic: "Aromatic",
 };
 const WATER = ["HOH", "WAT", "DOD", "H2O", "SOL"];
+// CDR loop highlight colors (distinct hues; the one place the viewer uses hue,
+// mirroring how the residue-coloring path is reused for conservation shades).
+const CDR_COLORS = { CDR1: "#d24d57", CDR2: "#e0823d", CDR3: "#5b8def" };
 
 // ---------- app state ----------
 const state = {
@@ -37,6 +40,8 @@ const state = {
   dockSite: null,
   pocketView: null,
   evolution: null,
+  antibody: null,
+  interface: null,
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -208,6 +213,8 @@ function applyStructure(id, data) {
   state.dockSite = null;
   state.pocketView = null;
   state.evolution = null;
+  state.antibody = data.antibody || null;
+  state.interface = null;
   state.colorMode = "mono";
   state.measureMode = false;
   state.measureAtoms = [];
@@ -222,6 +229,7 @@ function applyStructure(id, data) {
 
   renderOverview(data);
   renderComponents(data.components);
+  renderAntibody(state.antibody);
   updateDockPocket();
   $("#pocketsContent").className = "empty";
   $("#pocketsContent").textContent = "No pockets detected yet. Click “Detect pockets”.";
@@ -268,6 +276,9 @@ function renderOverview(data) {
     <div class="title-block">
       <h3>${m.title || "Untitled structure"}</h3>
       <span class="pdbid">PDB ${m.pdb_id}</span>
+      ${state.antibody && state.antibody.is_antibody
+        ? `<span class="ab-badge" title="Immunoglobulin variable domain detected">antibody detected</span>`
+        : ""}
     </div>
     <div class="meta-grid">
       ${cell("Method", m.experimental_method)}
@@ -370,6 +381,9 @@ function rebuildScene(resetZoom) {
   }
   if (mode === "conservation" && state.evolution && state.evolution.residues) {
     applyConservationColors(v);
+  }
+  if (mode === "cdr" && state.antibody && state.antibody.cdr_residues) {
+    applyCdrColors(v);
   }
 
   // --- hetero (ligands/ions): element CPK in element mode, else neutral ---
@@ -1054,6 +1068,39 @@ function buildReportSections() {
     });
   }
 
+  // --- Antibody ---
+  if (state.antibody && state.antibody.is_antibody) {
+    const ab = state.antibody;
+    const typed = ab.chains.filter((c) => c.type === "VH" || c.type === "VL");
+    const cdrLines = typed.map((ch) => {
+      const cdrs = ch.cdrs
+        ? Object.entries(ch.cdrs).map(([n, d]) => `${n} ${d.range[0]}–${d.range[1]} (${d.seq})`).join(", ")
+        : "—";
+      return `Chain ${ch.chain} (${ch.label}): ${cdrs}`;
+    });
+    const inCdr = ab.liabilities.filter((l) => l.in_cdr).length;
+    const sec = {
+      title: `Antibody analysis (${ab.scheme} numbering)`,
+      rows: [
+        ["Variable chains", typed.map((c) => `${c.chain}:${c.type}`).join(", ") || "—"],
+        ["Liabilities", `${ab.liability_count} (${inCdr} in a CDR)`],
+      ],
+      lines: cdrLines,
+    };
+    if (ab.liabilities.length)
+      sec.lines = sec.lines.concat(
+        ab.liabilities.slice(0, 8).map((l) => `${l.type} at ${l.chain}${l.res_seq} — ${l.in_cdr ? "CDR" : "framework"}`)
+      );
+    if (state.interface && state.interface.available) {
+      const it = state.interface;
+      sec.lines.push(
+        `Interface: ${it.paratope_residue_count} paratope + ${it.epitope_residue_count} epitope residues` +
+          (it.buried_surface_area_A2 != null ? `, ~${it.buried_surface_area_A2} Å² buried surface.` : ".")
+      );
+    }
+    s.push(sec);
+  }
+
   // --- Pockets ---
   if ((state.pockets || []).length) {
     const evoMap = {};
@@ -1199,6 +1246,10 @@ function reportLimitations() {
   if (state.dockData)
     L.push(
       "Docking treats both receptor and ligand as rigid (a single PubChem conformer); the score ranks fit but is NOT calibrated to affinity (kcal/mol); there is no explicit solvent, retained waters/ions, protonation/tautomer handling, or induced fit, and the Monte-Carlo search is stochastic (fixed seed)."
+    );
+  if (state.antibody && state.antibody.is_antibody)
+    L.push(
+      "Antibody chain typing and CDR ranges are a fast germline-framework-alignment heuristic (not ANARCI/IMGT-HMM numbering); CDR-H3 boundaries and unusual germlines (VHH, engineered scaffolds) may be mis-called, and liability motifs are sequence-only (no structural exposure or formulation context)."
     );
   const e = state.evolution;
   if (e && e.available !== false) {
@@ -1413,7 +1464,11 @@ function renderPockets(pk) {
     &nbsp;·&nbsp; <span class="tier-badge pocket">pocket</span> ${tiers.pocket}
     <span class="hint" style="display:block;margin-top:6px">Tiers (heuristic): <b>pocket</b> = geometric cavity · <b>ligandable</b> = large &amp; enclosed enough for a small molecule · <b>druggable</b> = also chemically favourable (hydrophobic, enclosed, not too polar).</span>
   </div>`;
-  c.innerHTML = legend +
+  const abNote =
+    state.antibody && state.antibody.is_antibody
+      ? `<div class="pharm-match miss">Antibody detected: LIGSITE finds enzyme-style cavities and will <b>mislabel a flat antibody paratope</b>. Treat any pocket here as low-confidence for this molecule type — use the Antibody tab's paratope–epitope interface instead.</div>`
+      : "";
+  c.innerHTML = abNote + legend +
     `<div class="pocket-list">${pk.map(pocketCard).join("")}</div>` +
     provenanceCardHTML(state.pocketMethods);
   pk.forEach((p) => {
@@ -1506,7 +1561,12 @@ function renderEvolution(d) {
       </tr>`
     )
     .join("");
+  const abCaveat =
+    state.antibody && state.antibody.is_antibody
+      ? `<div class="pharm-match miss">Antibody detected: Pfam family alignments smooth over CDR hypervariability, so conservation scores <b>underrate the functionally important CDR residues</b>. Read CDR loops from the Antibody tab, not conservation.</div>`
+      : "";
   c.innerHTML = `
+    ${abCaveat}
     <div class="meta-grid">
       ${cellEvo("Pfam family", d.pfam + " — " + (d.family_name || ""))}
       ${cellEvo("Homologs", d.n_sequences)}
@@ -1602,6 +1662,19 @@ function coevolutionHTML(d) {
     </table>`;
 }
 
+function applyCdrColors(v) {
+  // Reuse the residue-coloring path: group CDR residues by (chain, color).
+  const groups = {};
+  state.antibody.cdr_residues.forEach((r) => {
+    const shade = CDR_COLORS[r.cdr] || "#000000";
+    const key = r.chain + "|" + shade;
+    (groups[key] = groups[key] || { chain: r.chain, shade, resi: [] }).resi.push(r.res_seq);
+  });
+  Object.values(groups).forEach((g) =>
+    v.setStyle({ chain: g.chain, resi: g.resi }, { cartoon: { color: g.shade } })
+  );
+}
+
 function applyConservationColors(v) {
   const groups = {};
   state.evolution.residues.forEach((r) => {
@@ -1618,6 +1691,136 @@ function applyConservationColors(v) {
   Object.values(groups).forEach((g) =>
     v.setStyle({ chain: g.chain, resi: g.resi }, { cartoon: { color: g.shade } })
   );
+}
+
+// ================= antibody layer =================
+function renderAntibody(ab) {
+  const c = $("#antibodyContent");
+  if (!ab) {
+    c.className = "empty";
+    c.textContent = "Load a structure — antibody analysis runs automatically on load.";
+    return;
+  }
+  c.className = "";
+  const chainRows = (ab.chains || [])
+    .map((ch) => {
+      const cdrs = ch.cdrs
+        ? Object.entries(ch.cdrs).map(([n, d]) => `${n} ${d.range[0]}–${d.range[1]}`).join(", ")
+        : "—";
+      return `<tr>
+        <td><b>${ch.chain}</b></td>
+        <td><span class="ab-type ab-${ch.type}">${ch.label}</span></td>
+        <td>${ch.length}</td>
+        <td>${ch.framework_identity == null ? "—" : Math.round(ch.framework_identity * 100) + "%"}</td>
+        <td>${cdrs}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const banner = ab.is_antibody
+    ? `<div class="hint" style="margin-top:0">Immunoglobulin variable domain(s) detected. CDR loops are delimited with the <b>${ab.scheme}</b> scheme (a fast germline-alignment heuristic, not ANARCI numbering).</div>`
+    : `<div class="pharm-match miss">No immunoglobulin variable domain detected — this does not appear to be an antibody. Chain typing is shown below for reference.</div>`;
+
+  const cdrBtn = ab.is_antibody
+    ? `<button id="cdrColorBtn" class="primary" style="margin:14px 0">Color CDR loops in 3D →</button>
+       <div class="cdr-legend">
+         <span><i style="background:${CDR_COLORS.CDR1}"></i>CDR1</span>
+         <span><i style="background:${CDR_COLORS.CDR2}"></i>CDR2</span>
+         <span><i style="background:${CDR_COLORS.CDR3}"></i>CDR3</span>
+       </div>`
+    : "";
+
+  const liabRows = (ab.liabilities || [])
+    .map(
+      (l) => `<tr class="${l.in_cdr ? "liab-cdr" : ""}">
+        <td>${l.type}</td>
+        <td>${l.chain}${l.res_seq} <span class="muted">(${l.motif})</span></td>
+        <td>${l.in_cdr ? "<b>CDR</b>" : "framework"}</td>
+        <td>${l.note}</td>
+      </tr>`
+    )
+    .join("");
+
+  const ifaceBlock = ab.interface_available
+    ? `<div class="section-h">Paratope–epitope interface</div>
+       <div class="hint" style="margin-top:0">This file contains both an antibody chain and a candidate antigen ('other') chain. Analyze the protein–protein interface instead of routing the flat paratope through the small-molecule pocket finder.</div>
+       <button id="ifaceBtn" class="primary" style="margin:10px 0">Analyze paratope–epitope interface →</button>
+       <div id="interfaceContent"></div>`
+    : "";
+
+  c.innerHTML = `
+    ${banner}
+    <div class="section-h">Chain typing</div>
+    <table class="data">
+      <thead><tr><th>Chain</th><th>Type</th><th>Length</th><th>Framework id.</th><th>CDR ranges</th></tr></thead>
+      <tbody>${chainRows || `<tr><td colspan="5">No protein chains.</td></tr>`}</tbody>
+    </table>
+    ${cdrBtn}
+    <div class="section-h">Developability liabilities (${ab.liability_count})</div>
+    <div class="hint" style="margin-top:0">Sequence-motif flags. A liability inside a CDR (highlighted) is higher-concern than one in framework.</div>
+    <table class="data" style="margin-top:8px">
+      <thead><tr><th>Type</th><th>Position</th><th>Region</th><th>Note</th></tr></thead>
+      <tbody>${liabRows || `<tr><td colspan="4">No liability motifs found.</td></tr>`}</tbody>
+    </table>
+    ${ifaceBlock}
+    <div class="disclaimer">Research-only. Antibody typing and CDR ranges are a fast germline-alignment heuristic; liabilities are sequence motifs, not a stability or immunogenicity prediction.</div>
+    ${provenanceCardHTML(ab.methods)}`;
+
+  const cdrColorBtn = $("#cdrColorBtn");
+  if (cdrColorBtn)
+    cdrColorBtn.addEventListener("click", () => {
+      state.colorMode = "cdr";
+      const cm = $("#colorMode");
+      if (cm) cm.value = "cdr";
+      rebuildScene(false);
+      switchTab("viewer");
+    });
+  const ifaceBtn = $("#ifaceBtn");
+  if (ifaceBtn) ifaceBtn.addEventListener("click", runInterface);
+  if (state.interface) renderInterface(state.interface);
+}
+
+async function runInterface() {
+  if (!state.pdbId) return;
+  const btn = $("#ifaceBtn");
+  if (btn) btn.disabled = true;
+  setStatus("Computing the paratope–epitope interface (contacts + buried surface area)…", "busy");
+  try {
+    const data = await getJSON(`/api/antibody_interface?pdb=${state.pdbId}`);
+    if (!data.available) {
+      setStatus(data.reason || "Interface analysis unavailable.", "error");
+      return;
+    }
+    state.interface = data;
+    renderInterface(data);
+    setStatus(
+      `Interface: ${data.paratope_residue_count} paratope + ${data.epitope_residue_count} epitope residues` +
+        (data.buried_surface_area_A2 != null ? `, ~${data.buried_surface_area_A2} Å² buried.` : ".")
+    );
+    compileReport();
+  } catch (err) {
+    setStatus(`Interface analysis failed: ${err.message}`, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderInterface(d) {
+  const host = $("#interfaceContent");
+  if (!host) return;
+  const chips = (list) =>
+    list.map((r) => `<span class="res-chip"><b>${r.res_name}${r.res_seq}</b> <span class="rd">${r.chain} · ${r.contacts}c</span></span>`).join("") || "—";
+  host.innerHTML = `
+    <div class="meta-grid" style="margin-top:10px">
+      ${cellEvo("Buried surface area", d.buried_surface_area_A2 == null ? "—" : `~${d.buried_surface_area_A2} Å²`)}
+      ${cellEvo(`Atom contacts (≤${d.distance_cutoff_A} Å)`, d.atom_contacts)}
+      ${cellEvo("Paratope residues", `${d.paratope_residue_count} (chains ${d.antibody_chains.join(", ")})`)}
+      ${cellEvo("Epitope residues", `${d.epitope_residue_count} (chains ${d.antigen_chains.join(", ")})`)}
+    </div>
+    <div class="section-h">Paratope (antibody)</div>
+    <div class="res-chips">${chips(d.paratope)}</div>
+    <div class="section-h">Epitope (antigen)</div>
+    <div class="res-chips">${chips(d.epitope)}</div>`;
 }
 
 // ================= chemical lookup =================
@@ -1893,6 +2096,9 @@ function exportSessionJSON() {
         ? { results: state.pockets, methods: state.pocketMethods || null }
         : null,
     evolution: state.evolution || null,
+    antibody: state.antibody
+      ? { ...state.antibody, interface: state.interface || null }
+      : null,
     docking: state.dockData || null,
     screening: state.screen || null,
     chemical: state.chemical || null,
@@ -2059,6 +2265,11 @@ function init() {
       e.target.value = state.colorMode || "mono";
       setStatus("Run the Evolution tab first to color by conservation.", "error");
       runEvolution();
+      return;
+    }
+    if (mode === "cdr" && !(state.antibody && state.antibody.is_antibody)) {
+      e.target.value = state.colorMode || "mono";
+      setStatus("No antibody variable domain detected in this structure — CDR coloring is unavailable.", "error");
       return;
     }
     state.colorMode = mode;

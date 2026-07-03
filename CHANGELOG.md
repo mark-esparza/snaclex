@@ -5,6 +5,33 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added — Antibody layer (Phase 1 of the new-modules brief)
+- **Antibody detection on load** — every loaded/uploaded structure is scanned
+  for immunoglobulin variable domains. Each protein chain is typed (VH, VL,
+  heavy/light constant, or "other" candidate antigen) by aligning its N-terminal
+  window to germline framework consensus references and requiring the two
+  invariant Ig-domain cysteines. A small `snaclex/antibody.py` module does this
+  dependency-free, reusing the existing Needleman–Wunsch aligner; it runs inline
+  in `/api/analyze` and `/api/upload` (single-digit ms) and drives a new
+  **Antibody** tab plus an "antibody detected" badge.
+- **CDR highlighting** — CDR1/CDR2/CDR3 are delimited (IMGT) and recolored in the
+  3D viewer through the **same residue-coloring path** the Evolution module uses
+  (new `CDR loops (antibody)` color mode + legend).
+- **Developability liability scan** — sequence-motif flags (N-glycosylation
+  `N-X-S/T`, deamidation `N-G/N-S`, isomerization `D-G`, unpaired cysteine), each
+  marked in-CDR (higher concern) vs framework.
+- **Paratope–epitope interface** — when an antibody chain and a candidate antigen
+  coexist in one file, `/api/antibody_interface` computes the protein–protein
+  contact set (paratope vs epitope residues) and a coarse Shrake–Rupley buried
+  surface area, as a conditional branch of the interaction logic — instead of
+  routing a flat paratope through LIGSITE.
+- **Interpretation caveats** — the Evolution tab now warns that Pfam alignments
+  underrate hypervariable CDRs for antibodies, and the Pockets tab marks its
+  output low-confidence when an antibody is loaded (LIGSITE mislabels paratopes).
+- **Report + provenance** — an antibody section is added to the compiled report
+  and the JSON export, with `provenance.antibody_methods()` (numbering scheme,
+  method, limitations, research-only disclaimer).
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,

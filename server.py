@@ -29,6 +29,7 @@ import datetime
 
 from snaclex import __version__ as SNACLEX_VERSION
 from snaclex import (
+    antibody,
     apidocs,
     benchmark,
     chembl,
@@ -129,7 +130,7 @@ _CSP = (
 # Compute-heavy GET endpoints get a tighter per-IP budget plus a global
 # concurrency cap. Docking/screening are no longer here — they run through the
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
-EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution"}
+EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution", "/api/antibody_interface"}
 
 MAX_QUERY_LEN = 200       # single chemical / search term
 MAX_CHEMS_LEN = 2000      # batch-screening textarea
@@ -330,6 +331,32 @@ def _get_uniprots(pdb_id: str) -> list:
         accs = []
     _UNIPROT_CACHE[pid] = accs
     return accs
+
+
+_ANTIBODY_CACHE: dict[str, dict] = {}
+
+
+def _get_antibody(pdb_id: str) -> dict:
+    """Antibody detection (chain typing, CDRs, liabilities) — cheap, cached."""
+    pid = _norm_id(pdb_id)
+    cached = _ANTIBODY_CACHE.get(pid)
+    if cached is not None:
+        return cached
+    _text, structure, _meta = _load_structure(pid)
+    ab = antibody.analyze(structure)
+    if len(_ANTIBODY_CACHE) >= _CACHE_MAX:
+        _ANTIBODY_CACHE.pop(next(iter(_ANTIBODY_CACHE)))
+    _ANTIBODY_CACHE[pid] = ab
+    return ab
+
+
+def _detect_antibody(structure) -> dict | None:
+    """Run antibody detection defensively; never let it break structure loading."""
+    try:
+        return antibody.analyze(structure)
+    except Exception:  # noqa: BLE001
+        log.exception("Antibody detection failed")
+        return None
 
 
 def _get_pockets(pdb_id: str) -> list:
@@ -839,6 +866,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_pockets(qs)
         if path == "/api/evolution":
             return self._api_evolution(qs)
+        if path == "/api/antibody":
+            return self._api_antibody(qs)
+        if path == "/api/antibody_interface":
+            return self._api_antibody_interface(qs)
         if path == "/api/search":
             return self._api_search(qs)
         if path == "/api/version":
@@ -942,6 +973,11 @@ class Handler(BaseHTTPRequestHandler):
                 _UPLOAD_CACHE.pop(next(iter(_UPLOAD_CACHE)))
             _UPLOAD_CACHE[upload_id] = (viewer_text, structure, meta)
 
+        ab = _detect_antibody(structure)
+        ab_out = None
+        if ab is not None:
+            _ANTIBODY_CACHE[upload_id] = ab
+            ab_out = {**ab, "methods": provenance.antibody_methods()}
         return self._send_json({
             "upload_id": upload_id,
             "metadata": meta,
@@ -949,6 +985,7 @@ class Handler(BaseHTTPRequestHandler):
             "protein_atom_count": len(structure.protein_atoms),
             "components": _components_json(structure),
             "pdb_data": viewer_text,
+            "antibody": ab_out,
         })
 
     def _api_job_status(self, path):
@@ -965,6 +1002,11 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- API endpoints ------------------------------------------------
     def _analyze_payload(self, sid, structure, meta, text):
+        ab = _detect_antibody(structure)
+        ab_out = None
+        if ab is not None:
+            _ANTIBODY_CACHE[sid] = ab
+            ab_out = {**ab, "methods": provenance.antibody_methods()}
         return self._send_json({
             "id": sid,
             "metadata": meta,
@@ -972,6 +1014,7 @@ class Handler(BaseHTTPRequestHandler):
             "protein_atom_count": len(structure.protein_atoms),
             "components": _components_json(structure),
             "pdb_data": text,
+            "antibody": ab_out,
         })
 
     def _api_analyze(self, qs):
@@ -1078,6 +1121,31 @@ class Handler(BaseHTTPRequestHandler):
             **evo,
             "methods": provenance.evolution_methods(),
         })
+
+    def _api_antibody(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        ab = _get_antibody(pdb_id)
+        return self._send_json({**ab, "methods": provenance.antibody_methods()})
+
+    def _api_antibody_interface(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        _text, structure, _meta = _load_structure(pdb_id)
+        ab = _get_antibody(pdb_id)
+        ab_chains = [c["chain"] for c in ab["chains"]
+                     if c["type"] in ("VH", "VL", "heavy_constant", "light_constant")]
+        ag_chains = [c["chain"] for c in ab["chains"] if c["type"] == "other"]
+        if not ab_chains or not ag_chains:
+            return self._send_json({
+                "available": False,
+                "reason": "Need both an antibody chain and a candidate antigen "
+                          "('other') chain in the same structure for an interface.",
+            })
+        result = interactions.profile_interface(structure, ab_chains, ag_chains)
+        return self._send_json({**result, "methods": provenance.antibody_methods()})
 
     def _api_search(self, qs):
         query = clean_text((qs.get("q") or [""])[0])

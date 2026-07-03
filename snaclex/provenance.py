@@ -98,6 +98,47 @@ def pocket_methods() -> dict:
     }
 
 
+def antibody_methods() -> dict:
+    """Provenance for antibody chain typing, CDR delimitation + liability scan."""
+    from . import antibody
+    return {
+        "tool": tool(),
+        "method": "Germline-framework sequence alignment (chain typing + CDR "
+                  "delimitation) with regex developability-liability scan",
+        "method_family": "antibody sequence analysis",
+        "parameters": {
+            "numbering_scheme": "IMGT (CDR delimitation)",
+            "typing": "Needleman-Wunsch alignment of each chain's N-terminal "
+                      "window to VH / V-kappa / V-lambda / CH1 / CL germline "
+                      "framework consensus references",
+            "variable_framework_identity_min": antibody._VAR_FR_MIN,
+            "anchor_check": "two invariant intradomain cysteines must align",
+            "liability_motifs": {
+                "N-glycosylation": "N-X-S/T (X≠Pro)",
+                "deamidation": "N-G / N-S",
+                "isomerization": "D-G",
+                "unpaired_cysteine": "Cys beyond the two canonical anchors / odd count",
+            },
+        },
+        "interpretation": (
+            "Chain typing and CDR ranges are a fast germline-alignment heuristic "
+            "(not ANARCI/IMGT-HMM numbering). Liabilities are sequence motifs; a "
+            "motif in a CDR is higher-concern than one in framework. These are "
+            "developability flags, NOT a stability or immunogenicity prediction."
+        ),
+        "limitations": [
+            "Framework-alignment typing can mis-call unusual germlines, "
+            "single-domain (VHH) or engineered scaffolds; CDR boundaries are "
+            "approximate, especially CDR-H3.",
+            "Liability motifs are presence/absence only — no structural exposure, "
+            "pH, or formulation context is considered.",
+            "Interface buried-surface-area is a coarse Shrake-Rupley estimate "
+            "(heavy atoms, no hydrogens), not a rigorous SASA.",
+        ],
+        "disclaimer": _RESEARCH_DISCLAIMER,
+    }
+
+
 def evolution_methods() -> dict:
     """Provenance for the Pfam-alignment conservation analysis."""
     return {

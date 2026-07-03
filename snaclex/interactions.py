@@ -177,6 +177,133 @@ def _aromatic_interactions(component: Component, structure: Structure):
     return results
 
 
+# Protein-protein interface (paratope/epitope) analysis --------------------
+
+INTERFACE_MAX = 4.5   # heavy-atom contact distance across a protein interface
+_PROBE = 1.4          # water-probe radius (Angstrom) for the SASA estimate
+# Coarse per-element van der Waals radii (heavy atoms only; no hydrogens).
+_VDW = {"C": 1.70, "N": 1.55, "O": 1.52, "S": 1.80, "P": 1.80}
+# A small Fibonacci sphere for Shrake-Rupley; 96 points balances speed/accuracy.
+_SASA_POINTS = 96
+
+
+def _sphere_points(n: int):
+    import math as _m
+    pts = []
+    phi = _m.pi * (3.0 - _m.sqrt(5.0))
+    for i in range(n):
+        y = 1.0 - 2.0 * (i + 0.5) / n
+        r = _m.sqrt(max(0.0, 1.0 - y * y))
+        theta = phi * i
+        pts.append((_m.cos(theta) * r, y, _m.sin(theta) * r))
+    return pts
+
+
+def _residue_sasa(atoms, neighbor_atoms):
+    """Shrake-Rupley SASA per residue over ``atoms`` (Å²), occluded by neighbours.
+
+    ``neighbor_atoms`` supplies the occluding context (may include atoms outside
+    ``atoms``, e.g. the partner chain when computing bound-state SASA).
+    """
+    heavy = [a for a in atoms if a.element in _VDW]
+    if not heavy:
+        return {}
+    occl = [a for a in neighbor_atoms if a.element in _VDW]
+    grid = _Grid.build(occl, cell=8.0)
+    points = _sphere_points(_SASA_POINTS)
+    per_res: dict[tuple, float] = {}
+    for a in heavy:
+        ra = _VDW[a.element] + _PROBE
+        near = [b for b in grid.neighbors(a.x, a.y, a.z)
+                if b is not a and _dist(a, b) < ra + _VDW.get(b.element, 1.7) + _PROBE]
+        accessible = 0
+        for px, py, pz in points:
+            sx, sy, sz = a.x + px * ra, a.y + py * ra, a.z + pz * ra
+            buried = False
+            for b in near:
+                rb = _VDW.get(b.element, 1.7) + _PROBE
+                if (sx - b.x) ** 2 + (sy - b.y) ** 2 + (sz - b.z) ** 2 < rb * rb:
+                    buried = True
+                    break
+            if not buried:
+                accessible += 1
+        area = 4.0 * math.pi * ra * ra * accessible / _SASA_POINTS
+        per_res[(a.chain, a.res_seq)] = per_res.get((a.chain, a.res_seq), 0.0) + area
+    return per_res
+
+
+def profile_interface(structure: Structure, ab_chains, ag_chains) -> dict:
+    """Analyze a protein-protein (antibody paratope / antigen epitope) interface.
+
+    Reuses the atomic contact grid — this is a conditional branch of the
+    interaction logic, not a new engine. Returns the paratope residues (on the
+    antibody side), the epitope residues (on the antigen side), and a coarse
+    buried-surface-area estimate. BSA uses a Shrake-Rupley SASA (heavy atoms, no
+    hydrogens) restricted to interface-proximal residues, so it is an estimate.
+    """
+    ab_set, ag_set = set(ab_chains), set(ag_chains)
+    ab_atoms = [a for a in structure.protein_atoms if a.chain in ab_set]
+    ag_atoms = [a for a in structure.protein_atoms if a.chain in ag_set]
+    if not ab_atoms or not ag_atoms:
+        return {"available": False, "reason": "Missing antibody or antigen chain atoms."}
+
+    ag_grid = _Grid.build(ag_atoms, cell=max(6.0, INTERFACE_MAX + 1.0))
+    paratope: dict[tuple, dict] = {}
+    epitope: dict[tuple, dict] = {}
+    n_contacts = 0
+    for a in ab_atoms:
+        for b in ag_grid.neighbors(a.x, a.y, a.z):
+            d = _dist(a, b)
+            if d > INTERFACE_MAX:
+                continue
+            n_contacts += 1
+            for atom, store in ((a, paratope), (b, epitope)):
+                key = (atom.chain, atom.res_seq)
+                e = store.setdefault(key, {
+                    "chain": atom.chain, "res_name": atom.res_name,
+                    "res_seq": atom.res_seq, "contacts": 0, "min_distance": d,
+                })
+                e["contacts"] += 1
+                e["min_distance"] = min(e["min_distance"], round(d, 2))
+
+    def _residue_list(store):
+        out = sorted(store.values(), key=lambda e: (-e["contacts"], e["min_distance"]))
+        for e in out:
+            e["min_distance"] = round(e["min_distance"], 2)
+        return out
+
+    # Buried surface area over interface-proximal residues only (bounded).
+    iface_keys = set(paratope) | set(epitope)
+    bsa = None
+    if iface_keys:
+        iface_atoms = [a for a in structure.protein_atoms
+                       if (a.chain, a.res_seq) in iface_keys]
+        ab_iface = [a for a in iface_atoms if a.chain in ab_set]
+        ag_iface = [a for a in iface_atoms if a.chain in ag_set]
+        # Free-state SASA (each side alone) minus bound-state SASA (occluded by
+        # the partner); summed over both sides = total buried area.
+        free_ab = _residue_sasa(ab_iface, ab_atoms)
+        free_ag = _residue_sasa(ag_iface, ag_atoms)
+        bound_ab = _residue_sasa(ab_iface, ab_atoms + ag_atoms)
+        bound_ag = _residue_sasa(ag_iface, ag_atoms + ab_atoms)
+        buried = sum(max(0.0, free_ab[k] - bound_ab.get(k, 0.0)) for k in free_ab)
+        buried += sum(max(0.0, free_ag[k] - bound_ag.get(k, 0.0)) for k in free_ag)
+        bsa = round(buried, 1)
+
+    return {
+        "available": True,
+        "antibody_chains": sorted(ab_set),
+        "antigen_chains": sorted(ag_set),
+        "atom_contacts": n_contacts,
+        "distance_cutoff_A": INTERFACE_MAX,
+        "paratope": _residue_list(paratope),
+        "epitope": _residue_list(epitope),
+        "paratope_residue_count": len(paratope),
+        "epitope_residue_count": len(epitope),
+        "buried_surface_area_A2": bsa,
+    }
+
+
 def profile_component(structure: Structure, component: Component) -> dict:
     """Return the full atomic interaction profile for one hetero component."""
     is_metal_comp = component.kind in ("metal", "ion")

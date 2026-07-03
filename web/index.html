@@ -61,6 +61,7 @@
         <button class="tab active" data-tab="overview">Overview</button>
         <button class="tab" data-tab="viewer">3D Atomic Viewer</button>
         <button class="tab" data-tab="interactions">Interactions</button>
+        <button class="tab" data-tab="antibody">Antibody</button>
         <button class="tab" data-tab="pockets">Pockets</button>
         <button class="tab" data-tab="evolution">Evolution</button>
         <button class="tab" data-tab="docking">Docking</button>
@@ -87,6 +88,7 @@
               <option value="spectrum">Rainbow (N→C)</option>
               <option value="bfactor">B-factor (flexibility)</option>
               <option value="conservation">Conservation</option>
+              <option value="cdr">CDR loops (antibody)</option>
             </select>
           </label>
           <label class="chk"><input type="checkbox" id="toggleSurface" /> Surface</label>
@@ -100,6 +102,10 @@
 
       <section class="panel" data-panel="interactions">
         <div id="interactionContent" class="empty">Select a bound molecule to profile its atomic interactions.</div>
+      </section>
+
+      <section class="panel" data-panel="antibody">
+        <div id="antibodyContent" class="empty">Load a structure — if it is an antibody, chain typing, CDR loops and developability liabilities appear here automatically.</div>
       </section>
 
       <section class="panel" data-panel="pockets">
