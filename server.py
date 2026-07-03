@@ -38,6 +38,7 @@ from snaclex import (
     hla,
     interactions,
     jobs,
+    motion,
     pdbparse,
     pockets,
     provenance,
@@ -134,6 +135,7 @@ _CSP = (
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
 EXPENSIVE_ENDPOINTS = {
     "/api/pockets", "/api/evolution", "/api/antibody_interface", "/api/variants",
+    "/api/motion",
 }
 
 MAX_QUERY_LEN = 200       # single chemical / search term
@@ -320,6 +322,22 @@ def _get_evolution(pdb_id: str) -> dict | None:
     evo.pop("_divergent_keys", None)  # internal only
     _EVO_CACHE[pid] = evo
     return evo
+
+
+_MOTION_CACHE: dict[str, dict] = {}
+
+
+def _get_motion(pdb_id: str) -> dict:
+    """ANM normal-mode analysis for a structure (deterministic; cached)."""
+    pid = _norm_id(pdb_id)
+    if pid in _MOTION_CACHE:
+        return _MOTION_CACHE[pid]
+    _text, structure, _meta = _load_structure(pid)
+    result = motion.analyze(structure)
+    if len(_MOTION_CACHE) >= _CACHE_MAX:
+        _MOTION_CACHE.pop(next(iter(_MOTION_CACHE)))
+    _MOTION_CACHE[pid] = result
+    return result
 
 
 _VARIANT_CACHE: dict[str, dict] = {}
@@ -900,6 +918,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_variants(qs)
         if path == "/api/hla":
             return self._api_hla(qs)
+        if path == "/api/motion":
+            return self._api_motion(qs)
         if path == "/api/antibody":
             return self._api_antibody(qs)
         if path == "/api/antibody_interface":
@@ -1157,6 +1177,15 @@ class Handler(BaseHTTPRequestHandler):
             **evo,
             "methods": provenance.evolution_methods(),
         })
+
+    def _api_motion(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        result = _get_motion(pdb_id)
+        if not result.get("available"):
+            return self._send_json(result)
+        return self._send_json({**result, "methods": provenance.motion_methods()})
 
     def _api_hla(self, qs):
         pdb_id = (qs.get("pdb") or [""])[0]

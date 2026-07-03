@@ -263,6 +263,14 @@ tr.liab-cdr td { font-weight: 500; }
 .var-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 .ctx-tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: var(--radius); background: var(--soft); border: 1px solid var(--line); color: var(--ink); }
 
+/* ---------- motion (ANM) ---------- */
+.motion-controls { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; margin: 14px 0; }
+.motion-controls .field-label { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+.motion-controls select, .motion-controls input[type="range"] { margin-top: 2px; }
+.motion-controls input[type="range"] { width: 160px; }
+tr.active-row { background: var(--soft); }
+tr.active-row td { font-weight: 600; }
+
 /* ---------- docking ---------- */
 .dock-controls { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 18px; background: var(--soft); }
 .dock-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }

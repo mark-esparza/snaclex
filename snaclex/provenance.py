@@ -139,6 +139,43 @@ def antibody_methods() -> dict:
     }
 
 
+def motion_methods() -> dict:
+    """Provenance for the ANM normal-mode-analysis motion module."""
+    from . import motion
+    return {
+        "tool": tool(),
+        "method": "Anisotropic Network Model (ANM) normal-mode analysis",
+        "method_family": "elastic-network normal modes",
+        "parameters": {
+            "model": "Cα elastic network; springs between beads within cutoff",
+            "cutoff_A": motion.CUTOFF_A,
+            "spring_constant": "uniform (γ=1, arbitrary units)",
+            "coarse_grain_max_beads": motion.MAX_BEADS,
+            "solver": "shift-invert subspace iteration on the 3N×3N Hessian; "
+                      "6 rigid-body modes projected out analytically",
+            "modes_reported": motion.N_MODES_DEFAULT,
+        },
+        "interpretation": (
+            "Low-frequency modes are large-scale collective (domain / hinge / "
+            "breathing) motions the fold is intrinsically predisposed to. Mode "
+            "shapes and relative frequencies are meaningful; absolute frequencies "
+            "are in arbitrary units (γ=1, unit mass), NOT physical timescales."
+        ),
+        "limitations": [
+            "ANM is a harmonic approximation around one static structure — no "
+            "anharmonicity, solvent, or real energetics; this is NOT molecular "
+            "dynamics.",
+            f"Large structures are coarse-grained to ≤{motion.MAX_BEADS} beads to "
+            "stay within the synchronous compute budget, lowering spatial "
+            "resolution of the mode shapes.",
+            "A uniform spring constant means frequencies are relative, not "
+            "calibrated; contact-strain analysis is a geometric readout of the "
+            "linearized displacement, not a rupture prediction.",
+        ],
+        "disclaimer": _RESEARCH_DISCLAIMER,
+    }
+
+
 def hla_methods() -> dict:
     """Provenance for the HLA / MHC groove + drug-hypersensitivity module."""
     from . import hla

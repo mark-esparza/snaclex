@@ -63,6 +63,10 @@ const state = {
   variantColorBy: "pathogenicity",
   hla: null,
   hlaAnalysis: null,
+  motion: null,
+  motionMode: 0,
+  motionAmp: 4,
+  motionAnimating: false,
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -240,6 +244,10 @@ function applyStructure(id, data) {
   state.variantColorBy = "pathogenicity";
   state.hla = data.hla || null;
   state.hlaAnalysis = null;
+  state.motion = null;
+  state.motionMode = 0;
+  state.motionAmp = 4;
+  state.motionAnimating = false;
   state.colorMode = "mono";
   state.measureMode = false;
   state.measureAtoms = [];
@@ -258,6 +266,11 @@ function applyStructure(id, data) {
   }
   const hi = $("#hlaAlleleInput");
   if (hi) hi.value = "";
+  const mc2 = $("#motionContent");
+  if (mc2) {
+    mc2.className = "empty";
+    mc2.textContent = "No motion analysis yet. Click “Compute motions”.";
+  }
 
   renderOverview(data);
   renderComponents(data.components);
@@ -381,6 +394,10 @@ function drawInteractionLines(list) {
 function rebuildScene(resetZoom) {
   const v = state.viewer;
   if (!v || !state.pdbData) return;
+  if (state.motionAnimating) {
+    if (v.stopAnimate) v.stopAnimate();
+    state.motionAnimating = false;
+  }
   v.removeAllModels();
   v.removeAllShapes();
   v.removeAllSurfaces();
@@ -1234,6 +1251,23 @@ function buildReportSections() {
     s.push({ title: "HLA / MHC analysis", rows, lines });
   }
 
+  // --- Motion (ANM normal modes) ---
+  if (state.motion && state.motion.available !== false) {
+    const d = state.motion;
+    const rows = [
+      ["Network", `${d.n_beads} beads${d.coarse_grained ? ` (coarse-grained from ${d.residue_count})` : ""}, ${d.cutoff_A} Å cutoff`],
+      ["Modes", d.modes.map((m) => `#${m.index + 1} (freq ${m.relative_frequency}, coll ${m.collectivity})`).join("; ")],
+    ];
+    const lines = [];
+    const strain = motionContactStrain(d.modes[state.motionMode], state.motionAmp);
+    if (strain && strain.length)
+      lines.push(
+        `Weakest contacts under mode ${state.motionMode + 1} (±${state.motionAmp} Å): ` +
+          strain.slice(0, 4).map((r) => `${r.res} ${TYPE_LABEL[r.type] || r.type} (+${r.delta.toFixed(2)} Å)`).join(", ")
+      );
+    s.push({ title: "Large-scale motion (ANM normal modes)", rows, lines });
+  }
+
   // --- Docking ---
   if (state.dockData) {
     const d = state.dockData;
@@ -1350,6 +1384,10 @@ function reportLimitations() {
   if (state.hlaAnalysis && (state.hlaAnalysis.is_mhc || state.hlaAnalysis.allele))
     L.push(
       "HLA groove annotation uses a fixed reference pocket-lining set mapped onto the structure (class I complete; class II best-effort), compared to a single reference allele (A*02:01) so cross-locus differences over-report. HLA-drug associations are a curated lookup table (not exhaustive, not a prediction), RESEARCH ONLY — never diagnostic or prescribing guidance. Peptide-into-groove docking is deferred."
+    );
+  if (state.motion && state.motion.available !== false)
+    L.push(
+      `Motion is an ANM elastic-network harmonic approximation around one static structure — NOT molecular dynamics: no solvent/energetics, a uniform spring constant (so frequencies are relative, not physical timescales), and large structures are coarse-grained (≤${state.motion.max_beads} beads) which lowers mode-shape resolution. Contact-strain is a geometric readout of the linear displacement, not a rupture prediction.`
     );
   const e = state.evolution;
   if (e && e.available !== false) {
@@ -2264,6 +2302,212 @@ function hlaDrugHTML(d) {
     </table>`;
 }
 
+// ================= motion (ANM normal modes) =================
+async function runMotion() {
+  if (!state.pdbId) {
+    setStatus("Load a structure first.", "error");
+    return;
+  }
+  switchTab("motion");
+  setStatus("Building the Cα elastic network and solving normal modes…", "busy");
+  $("#motionBtn").disabled = true;
+  try {
+    const data = await getJSON(`/api/motion?pdb=${state.pdbId}`);
+    if (!data.available) {
+      state.motion = null;
+      $("#motionContent").className = "empty";
+      $("#motionContent").textContent = data.reason || "Motion analysis unavailable.";
+      setStatus("Motion analysis unavailable for this structure.", "error");
+      return;
+    }
+    state.motion = data;
+    state.motionMode = 0;
+    renderMotion(data);
+    setStatus(
+      `Computed ${data.n_modes} low-frequency modes on ${data.n_beads} beads` +
+        (data.coarse_grained ? ` (coarse-grained from ${data.residue_count} residues).` : ".")
+    );
+    compileReport();
+  } catch (err) {
+    setStatus(`Motion analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#motionBtn").disabled = false;
+  }
+}
+
+// Build a residue -> mode 3-vector map for the selected mode.
+function motionResidueVectors(mode) {
+  const map = {};
+  const bm = state.motion.bead_members;
+  const bd = mode.bead_disp;
+  for (let b = 0; b < bm.length; b++) {
+    const v = bd[b];
+    bm[b].forEach((cr) => {
+      map[cr[0] + "|" + cr[1]] = v;
+    });
+  }
+  return map;
+}
+
+// 4.3 — which Interactions contacts strain/break under the selected mode.
+function motionContactStrain(mode, amp) {
+  if (!state.profile || !state.profile.interactions.length) return null;
+  const vmap = motionResidueVectors(mode);
+  const rows = [];
+  state.profile.interactions.forEach((it) => {
+    const pa = it.protein_atom, la = it.ligand_atom;
+    if (!pa || !la || !pa.xyz || !la.xyz) return;
+    const v = vmap[pa.chain + "|" + pa.res_seq];
+    if (!v) return;
+    const d0 = it.distance;
+    const px = pa.xyz[0] + amp * v[0], py = pa.xyz[1] + amp * v[1], pz = pa.xyz[2] + amp * v[2];
+    const d1 = Math.hypot(px - la.xyz[0], py - la.xyz[1], pz - la.xyz[2]);
+    rows.push({ type: it.type, res: `${pa.res_name}${pa.res_seq}`, d0, d1, delta: d1 - d0 });
+  });
+  rows.sort((a, b) => b.delta - a.delta);
+  return rows;
+}
+
+function renderMotion(d) {
+  const c = $("#motionContent");
+  c.className = "";
+  const modeOpts = d.modes
+    .map((m) => `<option value="${m.index}">Mode ${m.index + 1} — rel. freq ${m.relative_frequency}, collectivity ${m.collectivity}</option>`)
+    .join("");
+  const rows = d.modes
+    .map(
+      (m) => `<tr class="${m.index === state.motionMode ? "active-row" : ""}">
+        <td>${m.index + 1}</td>
+        <td>${m.frequency}</td>
+        <td>${m.relative_frequency}</td>
+        <td>${m.collectivity}</td>
+      </tr>`
+    )
+    .join("");
+  c.innerHTML = `
+    <div class="meta-grid">
+      ${cellEvo("Beads", d.n_beads)}
+      ${cellEvo("Residues", d.residue_count)}
+      ${cellEvo("Coarse-grained", d.coarse_grained ? `yes (≤${d.max_beads} beads)` : "no")}
+      ${cellEvo("Network cutoff", `${d.cutoff_A} Å`)}
+    </div>
+    <div class="motion-controls">
+      <label class="field-label">Mode<select id="motionModeSel">${modeOpts}</select></label>
+      <label class="field-label">Amplitude <span id="motionAmpVal">${state.motionAmp} Å</span>
+        <input id="motionAmp" type="range" min="1" max="10" step="1" value="${state.motionAmp}" />
+      </label>
+      <button id="motionPlayBtn" class="primary">Animate in viewer →</button>
+      <button id="motionStopBtn" class="mini">Stop</button>
+    </div>
+    <table class="data">
+      <thead><tr><th>Mode</th><th>Frequency (a.u.)</th><th>Relative</th><th>Collectivity</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="hint">Frequencies are relative (γ=1, arbitrary units) — mode <b>shapes</b> and ordering are the signal, not absolute timescales. Collectivity ≈ fraction of the structure that moves; the lowest modes are the global hinge/breathing motions.</div>
+    <div id="motionStrain"></div>
+    <div class="disclaimer">ANM elastic-network normal modes on a single static structure — a harmonic approximation, NOT molecular dynamics.</div>
+    ${provenanceCardHTML(d.methods)}`;
+
+  $("#motionModeSel").value = String(state.motionMode);
+  $("#motionModeSel").addEventListener("change", (e) => {
+    state.motionMode = parseInt(e.target.value, 10);
+    renderMotion(d);
+    if (state.motionAnimating) animateMotion();
+  });
+  $("#motionAmp").addEventListener("input", (e) => {
+    state.motionAmp = parseInt(e.target.value, 10);
+    $("#motionAmpVal").textContent = `${state.motionAmp} Å`;
+    renderMotionStrain();
+    if (state.motionAnimating) animateMotion();
+  });
+  $("#motionPlayBtn").addEventListener("click", () => { animateMotion(); switchTab("viewer"); });
+  $("#motionStopBtn").addEventListener("click", stopMotion);
+  renderMotionStrain();
+}
+
+function renderMotionStrain() {
+  const host = $("#motionStrain");
+  if (!host || !state.motion) return;
+  const mode = state.motion.modes[state.motionMode];
+  const strain = motionContactStrain(mode, state.motionAmp);
+  if (!strain) {
+    host.innerHTML = `<div class="hint">Select a bound molecule (Interactions) to see which of its contacts strain most under this motion.</div>`;
+    return;
+  }
+  const top = strain.slice(0, 6);
+  const rows = top
+    .map(
+      (r) => `<tr>
+        <td>${TYPE_LABEL[r.type] || r.type}</td>
+        <td>${r.res}</td>
+        <td>${r.d0.toFixed(2)} Å → ${r.d1.toFixed(2)} Å</td>
+        <td>${r.delta >= 0 ? "+" : ""}${r.delta.toFixed(2)} Å</td>
+      </tr>`
+    )
+    .join("");
+  host.innerHTML = `
+    <div class="section-h">Weakest contacts under this motion (mode ${state.motionMode + 1}, ±${state.motionAmp} Å)</div>
+    <div class="hint" style="margin-top:0">Protein atoms displaced along the mode (ligand held fixed); contacts sorted by how much they stretch — the top rows are the interaction weak points of this motion.</div>
+    <table class="data" style="margin-top:8px">
+      <thead><tr><th>Type</th><th>Residue</th><th>Distance</th><th>Δ</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// Build a multi-MODEL PDB oscillating the structure along the selected mode.
+function buildMotionFrames(mode, amp, nFrames) {
+  const vmap = motionResidueVectors(mode);
+  const lines = (state.pdbData || "").split("\n");
+  const frames = [];
+  for (let f = 0; f < nFrames; f++) {
+    const a = amp * Math.sin((2 * Math.PI * f) / nFrames);
+    const out = [`MODEL     ${f + 1}`];
+    for (const line of lines) {
+      const rec = line.slice(0, 6);
+      if (rec !== "ATOM  " && rec !== "HETATM") continue;
+      const chain = line.slice(21, 22).trim() || "A";
+      const resSeq = parseInt(line.slice(22, 26), 10);
+      const v = vmap[chain + "|" + resSeq];
+      let x = parseFloat(line.slice(30, 38));
+      let y = parseFloat(line.slice(38, 46));
+      let z = parseFloat(line.slice(46, 54));
+      if (v) { x += a * v[0]; y += a * v[1]; z += a * v[2]; }
+      out.push(
+        line.slice(0, 30) +
+          x.toFixed(3).padStart(8) + y.toFixed(3).padStart(8) + z.toFixed(3).padStart(8) +
+          line.slice(54)
+      );
+    }
+    out.push("ENDMDL");
+    frames.push(out.join("\n"));
+  }
+  return frames.join("\n");
+}
+
+function animateMotion() {
+  if (!state.motion || !state.viewer) return;
+  const v = state.viewer;
+  const mode = state.motion.modes[state.motionMode];
+  const framesText = buildMotionFrames(mode, state.motionAmp, 20);
+  v.removeAllModels();
+  v.removeAllShapes();
+  v.removeAllSurfaces();
+  v.removeAllLabels();
+  v.addModelsAsFrames(framesText, "pdb");
+  v.setStyle({}, { cartoon: { color: "spectrum" } });
+  v.setStyle({ hetflag: true }, { stick: { radius: 0.16, color: "#666666" } });
+  v.zoomTo();
+  v.animate({ loop: "backAndForth", interval: 60, reps: 0 });
+  v.render();
+  state.motionAnimating = true;
+}
+
+function stopMotion() {
+  state.motionAnimating = false;
+  if (state.viewer && state.viewer.stopAnimate) state.viewer.stopAnimate();
+  rebuildScene(false);
+}
+
 // ================= chemical lookup =================
 async function lookupChemical(q) {
   q = (q || "").trim();
@@ -2542,6 +2786,7 @@ function exportSessionJSON() {
       : null,
     variants: state.variants || null,
     hla: state.hlaAnalysis || (state.hla ? { detection: state.hla } : null),
+    motion: state.motion || null,
     docking: state.dockData || null,
     screening: state.screen || null,
     chemical: state.chemical || null,
@@ -2706,6 +2951,8 @@ function init() {
   if (variantBtn) variantBtn.addEventListener("click", runVariants);
   const hlaBtn = $("#hlaBtn");
   if (hlaBtn) hlaBtn.addEventListener("click", runHLA);
+  const motionBtn = $("#motionBtn");
+  if (motionBtn) motionBtn.addEventListener("click", runMotion);
   const hlaInput = $("#hlaAlleleInput");
   if (hlaInput)
     hlaInput.addEventListener("keydown", (e) => {

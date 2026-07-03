@@ -94,8 +94,19 @@ epitope binning.
   sequence fetch is not required — the loaded structure supplies the allele's
   actual groove residues.
 
-## Phase 4 (planned, not yet built)
+## Phase 4 — Motion module (shipped)
 
-- **Motion (NMA/ANM)**: analytic ANM on Cα coordinates (numpy-free linear
-  algebra), mode selector + amplitude slider animating the viewer, and a
-  contact-strain readout tied back to Interactions.
+- **`snaclex/motion.py`** (new): dependency-free ANM. Cα elastic network →
+  3N×3N Hessian → lowest internal modes via shift-invert subspace iteration with
+  the 6 analytic rigid-body modes projected out (stdlib Cholesky + Jacobi;
+  cross-checked against a full solve). Coarse-grained to ≤60 beads (documented
+  cap) to stay synchronous; compact bead-level payload. `/api/motion`, cached.
+- **Frontend**: Motion tab with mode selector + amplitude slider, viewer
+  animation via multi-frame models, and the Interactions contact-strain readout
+  (which of a bound molecule's contacts stretch most under the mode). MD is
+  explicitly deferred; report + export + provenance.
+
+All four phases of the brief are now implemented. Remaining backlog (per the
+brief's "Later / optional"): antibody germline/humanness + canonical CDR classes,
+epitope binning, exon-to-structure highlight, and a true-MD tier behind a real
+job queue.

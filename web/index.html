@@ -66,6 +66,7 @@
         <button class="tab" data-tab="evolution">Evolution</button>
         <button class="tab" data-tab="variants">Variants</button>
         <button class="tab" data-tab="hla">HLA / MHC</button>
+        <button class="tab" data-tab="motion">Motion</button>
         <button class="tab" data-tab="docking">Docking</button>
         <button class="tab" data-tab="benchmark">Benchmark</button>
         <button class="tab" data-tab="chemical">Chemical</button>
@@ -148,6 +149,14 @@
           <div class="hint">Assumes you already know / specify the allele (typed above or implied by the loaded PDB). Annotates the peptide-binding groove from a reference position set, compares this allele's groove to a reference, and flags known HLA-drug hypersensitivity associations. HLA typing from raw reads is out of scope.</div>
         </div>
         <div id="hlaContent" class="empty">Load an MHC structure (or enter an allele) and click “Analyze HLA”.</div>
+      </section>
+
+      <section class="panel" data-panel="motion">
+        <div class="pocket-controls">
+          <button id="motionBtn" class="primary">Compute motions</button>
+          <span class="hint" style="margin:0">Builds a Cα elastic network (ANM) and solves the lowest-frequency normal modes — the large-scale hinge/breathing motions the fold is predisposed to. Analytic linear algebra (no MD); large structures are coarse-grained. A few seconds.</span>
+        </div>
+        <div id="motionContent" class="empty">No motion analysis yet. Click “Compute motions”.</div>
       </section>
 
       <section class="panel" data-panel="docking">

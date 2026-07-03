@@ -5,6 +5,26 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added — Motion module (Phase 4 of the new-modules brief)
+- **Normal-mode analysis (ANM)** — a new **Motion** tab builds a Cα elastic
+  network and solves the lowest-frequency normal modes (the large-scale
+  hinge/breathing motions), reusing coordinates already loaded. `snaclex/motion.py`
+  is pure analytic linear algebra — **not** molecular dynamics, no force field,
+  no dependency. The 3N×3N Hessian's lowest internal modes are extracted by
+  shift-invert subspace iteration with the 6 rigid-body modes projected out
+  analytically (a stdlib Cholesky + Jacobi eigensolver, cross-checked against a
+  brute-force full solve). Large structures are coarse-grained to ≤60 beads to
+  stay synchronous (documented cap). `/api/motion`, cached.
+- **Viewer animation** — mode selector + amplitude slider; "Animate" oscillates
+  the structure along the selected mode in the existing 3Dmol viewer via
+  multi-frame models.
+- **Contact-strain tie-in (the stronger feature)** — under the selected mode and
+  amplitude, the module re-evaluates the **Interactions** contacts of a bound
+  molecule and ranks which strain/break most, turning "here is a wiggle" into
+  "here is the interaction weak point of this motion."
+- **MD explicitly deferred**; report section, JSON export, and
+  `provenance.motion_methods()` (method, cap, relative-frequency caveat) added.
+
 ### Added — HLA / MHC module (Phase 3 of the new-modules brief)
 - **MHC-fold detection on load** — structures are classified as MHC **class I**
   (polymorphic heavy chain + β2-microglobulin) or **class II** (α + β chains) by
