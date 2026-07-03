@@ -20,6 +20,12 @@ const WATER = ["HOH", "WAT", "DOD", "H2O", "SOL"];
 // mirroring how the residue-coloring path is reused for conservation shades).
 const CDR_COLORS = { CDR1: "#d24d57", CDR2: "#e0823d", CDR3: "#5b8def" };
 // Variant pathogenicity colors (ClinVar), diverging pathogenic→benign.
+// HLA class-I groove pocket colors (A–F) + class-II beta1.
+const GROOVE_COLORS = {
+  A: "#d24d57", B: "#e0823d", C: "#c69214",
+  D: "#3da35d", E: "#3aa6a6", F: "#5b8def", beta1: "#b052c0", alpha1: "#8a8f99",
+};
+// Variant pathogenicity colors (ClinVar), diverging pathogenic→benign.
 const VARIANT_COLORS = {
   pathogenic: "#d24d57",
   "likely pathogenic": "#e0823d",
@@ -55,6 +61,8 @@ const state = {
   interface: null,
   variants: null,
   variantColorBy: "pathogenicity",
+  hla: null,
+  hlaAnalysis: null,
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -230,6 +238,8 @@ function applyStructure(id, data) {
   state.interface = null;
   state.variants = null;
   state.variantColorBy = "pathogenicity";
+  state.hla = data.hla || null;
+  state.hlaAnalysis = null;
   state.colorMode = "mono";
   state.measureMode = false;
   state.measureAtoms = [];
@@ -246,10 +256,13 @@ function applyStructure(id, data) {
     vc.className = "empty";
     vc.textContent = "No variant overlay yet. Click “Overlay variants”.";
   }
+  const hi = $("#hlaAlleleInput");
+  if (hi) hi.value = "";
 
   renderOverview(data);
   renderComponents(data.components);
   renderAntibody(state.antibody);
+  renderHLAInitial(state.hla);
   updateDockPocket();
   $("#pocketsContent").className = "empty";
   $("#pocketsContent").textContent = "No pockets detected yet. Click “Detect pockets”.";
@@ -298,6 +311,9 @@ function renderOverview(data) {
       <span class="pdbid">PDB ${m.pdb_id}</span>
       ${state.antibody && state.antibody.is_antibody
         ? `<span class="ab-badge" title="Immunoglobulin variable domain detected">antibody detected</span>`
+        : ""}
+      ${state.hla && state.hla.is_mhc
+        ? `<span class="ab-badge" title="MHC fold detected">MHC class ${state.hla.mhc_class} detected</span>`
         : ""}
     </div>
     <div class="meta-grid">
@@ -407,6 +423,9 @@ function rebuildScene(resetZoom) {
   }
   if (mode === "variant" && state.variants && state.variants.residues) {
     applyVariantColors(v);
+  }
+  if (mode === "groove" && state.hlaAnalysis && state.hlaAnalysis.groove) {
+    applyGrooveColors(v);
   }
 
   // --- hetero (ligands/ions): element CPK in element mode, else neutral ---
@@ -1196,6 +1215,25 @@ function buildReportSections() {
     });
   }
 
+  // --- HLA / MHC ---
+  if (state.hlaAnalysis && (state.hlaAnalysis.is_mhc || state.hlaAnalysis.allele)) {
+    const d = state.hlaAnalysis;
+    const rows = [
+      ["MHC class", d.mhc_class || "—"],
+      ["Allele", d.allele || "—"],
+    ];
+    if (d.groove)
+      rows.push(["Groove", `${d.groove.groove_residues.length} residues, ${d.groove.differences.length} allele-specific (vs ${d.groove.reference_allele})`]);
+    const lines = [];
+    if (d.groove && d.groove.differences.length)
+      lines.push("Allele-specific groove residues: " +
+        d.groove.differences.slice(0, 10).map((x) => `${x.reference}${x.res_seq}${x.allele}(${x.pocket})`).join(", "));
+    (d.drug_associations || []).forEach((h) =>
+      lines.push(`Drug hypersensitivity: ${h.drug} — ${h.reaction} [${h.citation}]`)
+    );
+    s.push({ title: "HLA / MHC analysis", rows, lines });
+  }
+
   // --- Docking ---
   if (state.dockData) {
     const d = state.dockData;
@@ -1308,6 +1346,10 @@ function reportLimitations() {
   if (state.variants && state.variants.available !== false)
     L.push(
       "Variant overlay is a database cross-reference (ClinVar significance + gnomAD frequency via the EBI Proteins API), NOT clinical guidance: significance values change over time and can be conflicting, only variants that align onto the resolved structure are shown, and absence of a variant is not evidence of benignity."
+    );
+  if (state.hlaAnalysis && (state.hlaAnalysis.is_mhc || state.hlaAnalysis.allele))
+    L.push(
+      "HLA groove annotation uses a fixed reference pocket-lining set mapped onto the structure (class I complete; class II best-effort), compared to a single reference allele (A*02:01) so cross-locus differences over-report. HLA-drug associations are a curated lookup table (not exhaustive, not a prediction), RESEARCH ONLY — never diagnostic or prescribing guidance. Peptide-into-groove docking is deferred."
     );
   const e = state.evolution;
   if (e && e.available !== false) {
@@ -1522,10 +1564,12 @@ function renderPockets(pk) {
     &nbsp;·&nbsp; <span class="tier-badge pocket">pocket</span> ${tiers.pocket}
     <span class="hint" style="display:block;margin-top:6px">Tiers (heuristic): <b>pocket</b> = geometric cavity · <b>ligandable</b> = large &amp; enclosed enough for a small molecule · <b>druggable</b> = also chemically favourable (hydrophobic, enclosed, not too polar).</span>
   </div>`;
-  const abNote =
+  let abNote =
     state.antibody && state.antibody.is_antibody
       ? `<div class="pharm-match miss">Antibody detected: LIGSITE finds enzyme-style cavities and will <b>mislabel a flat antibody paratope</b>. Treat any pocket here as low-confidence for this molecule type — use the Antibody tab's paratope–epitope interface instead.</div>`
       : "";
+  if (state.hla && state.hla.is_mhc)
+    abNote += `<div class="pharm-match miss">MHC fold detected: the peptide-binding groove is known and conserved — use the <b>HLA / MHC</b> tab's reference groove annotation rather than blind LIGSITE cavity detection here.</div>`;
   c.innerHTML = abNote + legend +
     `<div class="pocket-list">${pk.map(pocketCard).join("")}</div>` +
     provenanceCardHTML(state.pocketMethods);
@@ -1742,6 +1786,26 @@ function variantFreqShade(af) {
   if (t >= 0.4) return "#888888";
   if (t >= 0.2) return "#aaaaaa";
   return "#cccccc";
+}
+
+function applyGrooveColors(v) {
+  // Color each groove residue by its (first) pocket; reuse the setStyle path.
+  const g = state.hlaAnalysis.groove;
+  const chain = g.chain;
+  const groups = {};
+  (g.groove_residues || []).forEach((r) => {
+    const pocket = (r.pockets || [])[0];
+    const shade = GROOVE_COLORS[pocket] || "#8a8f99";
+    const key = shade;
+    (groups[key] = groups[key] || { shade, resi: [] }).resi.push(r.res_seq);
+  });
+  Object.values(groups).forEach((grp) =>
+    v.setStyle({ chain, resi: grp.resi }, { cartoon: { color: grp.shade } })
+  );
+  // Emphasize allele-specific (polymorphic) groove residues as sticks.
+  (g.differences || []).forEach((d) =>
+    v.addStyle({ chain, resi: d.res_seq }, { stick: { radius: 0.2, color: "#000000" } })
+  );
 }
 
 function applyVariantColors(v) {
@@ -2048,6 +2112,158 @@ function renderVariants(d) {
   );
 }
 
+// ================= HLA / MHC =================
+function renderHLAInitial(det) {
+  const c = $("#hlaContent");
+  if (!c) return;
+  if (det && det.is_mhc) {
+    c.className = "";
+    const chains =
+      det.mhc_class === "I"
+        ? `heavy chain <b>${det.heavy_chain}</b>${det.b2m_chain ? `, β2-microglobulin <b>${det.b2m_chain}</b>` : ""}`
+        : `α chain <b>${det.alpha_chain}</b>, β chain <b>${det.beta_chain}</b>`;
+    c.innerHTML = `
+      <div class="pharm-match hit">MHC <b>class ${det.mhc_class}</b> fold detected (${chains}). Enter the allele above (if known) and click <b>Analyze HLA</b> to annotate the peptide-binding groove and check drug-hypersensitivity associations.</div>`;
+  } else {
+    c.className = "empty";
+    c.textContent = "No MHC fold detected. You can still enter an allele and analyze known drug associations.";
+  }
+}
+
+async function runHLA() {
+  if (!state.pdbId) {
+    setStatus("Load a structure first.", "error");
+    return;
+  }
+  const allele = ($("#hlaAlleleInput").value || "").trim();
+  switchTab("hla");
+  setStatus("Annotating the HLA groove and checking drug associations…", "busy");
+  $("#hlaBtn").disabled = true;
+  try {
+    const url = `/api/hla?pdb=${state.pdbId}` +
+      (allele ? `&allele=${encodeURIComponent(allele)}` : "");
+    const data = await getJSON(url);
+    state.hlaAnalysis = data;
+    renderHLA(data);
+    const hits = (data.drug_associations || []).length;
+    setStatus(
+      `HLA analysis done${data.allele ? ` for ${data.allele}` : ""}` +
+        (data.groove ? `; groove mapped (${data.groove.groove_residues.length} residues)` : "") +
+        (hits ? `; ${hits} drug-hypersensitivity association(s).` : ".")
+    );
+    compileReport();
+  } catch (err) {
+    setStatus(`HLA analysis failed: ${err.message}`, "error");
+  } finally {
+    $("#hlaBtn").disabled = false;
+  }
+}
+
+function renderHLA(d) {
+  const c = $("#hlaContent");
+  c.className = "";
+  const det = d.detection || {};
+
+  const grooveBlock = d.groove ? hlaGrooveHTML(d.groove, d) : "";
+  const drugBlock = hlaDrugHTML(d);
+
+  const legend = d.groove && !d.groove.approximate
+    ? `<div class="cdr-legend">
+         ${["A", "B", "C", "D", "E", "F"].map((p) => `<span><i style="background:${GROOVE_COLORS[p]}"></i>Pocket ${p}</span>`).join("")}
+       </div>`
+    : "";
+
+  c.innerHTML = `
+    <div class="pharm-match miss"><b>RESEARCH ONLY — not for clinical use.</b> HLA-drug associations are literature-curated risk markers for research interpretation, not diagnostic or prescribing advice.</div>
+    <div class="meta-grid">
+      ${cellEvo("MHC class", d.mhc_class || "—")}
+      ${cellEvo("Allele", d.allele || (d.allele_input ? d.allele_input + " (unrecognized)" : "—"))}
+      ${cellEvo("Fold detected", det.is_mhc ? `class ${det.mhc_class}` : "no")}
+      ${cellEvo("Groove reference", d.groove ? d.groove.reference_allele : "—")}
+    </div>
+    ${d.groove ? `<button id="grooveColorBtn" class="primary" style="margin:14px 0">Color groove pockets in 3D →</button>${legend}` : ""}
+    ${grooveBlock}
+    ${drugBlock}
+    ${d.peptide_docking_available ? "" : `<div class="hint"><b>Peptide-into-groove docking:</b> experimental / deferred — an anchored (P2 + C-terminal) constrained search is planned as an extension of the docking routine, kept out of the synchronous request budget for now.</div>`}
+    <div class="disclaimer">Groove positions: reference pocket-lining set (class I pockets A–F; Saper/Bjorkman/Wiley 1991, Madden 1995), mapped onto this structure — not blind cavity detection. Population frequencies: AFND. Sequences/nomenclature: IPD-IMGT/HLA.</div>
+    ${provenanceCardHTML(d.methods)}`;
+
+  const gcb = $("#grooveColorBtn");
+  if (gcb)
+    gcb.addEventListener("click", () => {
+      state.colorMode = "groove";
+      const cm = $("#colorMode");
+      if (cm) cm.value = "groove";
+      rebuildScene(false);
+      switchTab("viewer");
+    });
+  c.querySelectorAll("[data-drug]").forEach((b) =>
+    b.addEventListener("click", () => {
+      $("#chemInput").value = b.dataset.drug;
+      lookupChemical(b.dataset.drug);
+    })
+  );
+}
+
+function hlaGrooveHTML(g, d) {
+  const diffRows = (g.differences || [])
+    .map(
+      (x) => `<tr>
+        <td>${x.reference}${x.res_seq}${x.allele}</td>
+        <td>pocket ${x.pocket}</td>
+        <td>${x.change}</td>
+      </tr>`
+    )
+    .join("");
+  const pocketRows = (g.pocket_summary || [])
+    .map(
+      (p) => `<tr>
+        <td><span class="var-dot" style="background:${GROOVE_COLORS[p.pocket] || "#8a8f99"}"></span>${p.pocket}</td>
+        <td>${p.mapped}/${p.positions}</td>
+        <td>${p.polymorphic}</td>
+        <td>${p.charge_shift > 0 ? "+" : ""}${p.charge_shift || 0}</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    ${g.approximate ? `<div class="pharm-match miss">Class-II groove annotation is best-effort (β-chain, approximate).</div>` : ""}
+    <div class="section-h">Groove pockets (chain ${g.chain}, ${Math.round(g.reference_identity * 100)}% id to ${g.reference_allele})</div>
+    <table class="data">
+      <thead><tr><th>Pocket</th><th>Mapped</th><th>Allele-specific</th><th>Net charge Δ</th></tr></thead>
+      <tbody>${pocketRows || `<tr><td colspan="4">No groove positions mapped.</td></tr>`}</tbody>
+    </table>
+    <div class="section-h">Allele-specific groove residues (vs ${g.reference_allele})</div>
+    <table class="data" style="margin-top:8px">
+      <thead><tr><th>Substitution</th><th>Pocket</th><th>Physicochemical change</th></tr></thead>
+      <tbody>${diffRows || `<tr><td colspan="3">No differences from the reference at groove positions.</td></tr>`}</tbody>
+    </table>`;
+}
+
+function hlaDrugHTML(d) {
+  const hits = d.drug_associations;
+  if (hits === undefined)
+    return `<div class="section-h">Drug hypersensitivity</div><div class="hint" style="margin-top:0">Enter an allele above to check the curated HLA-drug hypersensitivity table.</div>`;
+  if (!hits.length)
+    return `<div class="section-h">Drug hypersensitivity</div><div class="pharm-match miss">No curated drug-hypersensitivity association for ${d.allele} in the seed table (absence is not evidence of safety).</div>`;
+  const rows = hits
+    .map(
+      (h) => `<tr>
+        <td><b>${h.drug}</b></td>
+        <td>${h.reaction}</td>
+        <td class="muted">${h.citation}</td>
+        <td><button class="mini" data-drug="${escapeHtml(h.drug)}">Look up drug →</button></td>
+      </tr>`
+    )
+    .join("");
+  return `
+    <div class="section-h">Drug hypersensitivity — ${d.allele}</div>
+    <div class="pharm-match hit"><b>${hits.length}</b> documented association(s). This is a curated lookup, not a prediction. Pull up any drug in the Chemical tab (PubChem).</div>
+    <table class="data" style="margin-top:8px">
+      <thead><tr><th>Drug</th><th>Reaction</th><th>Citation</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 // ================= chemical lookup =================
 async function lookupChemical(q) {
   q = (q || "").trim();
@@ -2325,6 +2541,7 @@ function exportSessionJSON() {
       ? { ...state.antibody, interface: state.interface || null }
       : null,
     variants: state.variants || null,
+    hla: state.hlaAnalysis || (state.hla ? { detection: state.hla } : null),
     docking: state.dockData || null,
     screening: state.screen || null,
     chemical: state.chemical || null,
@@ -2487,6 +2704,13 @@ function init() {
   $("#evoBtn").addEventListener("click", runEvolution);
   const variantBtn = $("#variantBtn");
   if (variantBtn) variantBtn.addEventListener("click", runVariants);
+  const hlaBtn = $("#hlaBtn");
+  if (hlaBtn) hlaBtn.addEventListener("click", runHLA);
+  const hlaInput = $("#hlaAlleleInput");
+  if (hlaInput)
+    hlaInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") runHLA();
+    });
   $("#colorMode").addEventListener("change", (e) => {
     const mode = e.target.value;
     if (mode === "conservation" && !state.evolution) {
@@ -2504,6 +2728,12 @@ function init() {
       e.target.value = state.colorMode || "mono";
       setStatus("Run the Variants tab first to color by ClinVar/gnomAD variants.", "error");
       runVariants();
+      return;
+    }
+    if (mode === "groove" && !(state.hlaAnalysis && state.hlaAnalysis.groove)) {
+      e.target.value = state.colorMode || "mono";
+      setStatus("Run the HLA / MHC tab first to map the groove pockets.", "error");
+      runHLA();
       return;
     }
     state.colorMode = mode;

@@ -76,12 +76,26 @@ epitope binning.
 - Same EBI host the Evolution module already depends on, so no new
   connectivity assumptions; all fetches degrade gracefully to "data unavailable".
 
-## Phases 3–4 (planned, not yet built)
+## Phase 3 — HLA / MHC module (shipped)
 
-- **HLA/MHC**: allele input + IPD-IMGT/HLA + AFND as the HLA analog of the
-  genome bridge; reference groove-position set (not blind LIGSITE); curated
-  HLA↔drug hypersensitivity table surfaced through the existing PubChem viewer;
-  RESEARCH-ONLY prominent.
+- **`snaclex/hla.py`** (new): MHC-fold detection (class I heavy + β2m; class II
+  α/β) by chain alignment to reference sequences — runs inline on load like the
+  antibody layer. Groove annotated from a fixed reference pocket-lining set
+  (class I A–F), mapped onto the structure by NW alignment to an A*02:01
+  reference (so it is reference-annotated, not blind LIGSITE). Allele-specific
+  groove comparison reuses the Pockets residue-property sets. Curated HLA↔drug
+  hypersensitivity table with primary-literature citations. `/api/hla` (cheap,
+  synchronous). Peptide docking deferred behind `PEPTIDE_DOCKING_AVAILABLE`.
+- **Frontend**: HLA/MHC tab (allele input), `groove` color mode + pocket legend,
+  groove/pocket + allele-difference tables, drug hits with a "Look up drug"
+  button into the existing Chemical viewer, MHC badge, Pockets note, report +
+  export. RESEARCH-ONLY banner prominent (clinically adjacent).
+- IPD-IMGT/HLA + AFND credited as sequence/frequency sources. EBI/live allele
+  sequence fetch is not required — the loaded structure supplies the allele's
+  actual groove residues.
+
+## Phase 4 (planned, not yet built)
+
 - **Motion (NMA/ANM)**: analytic ANM on Cα coordinates (numpy-free linear
   algebra), mode selector + amplitude slider animating the viewer, and a
   contact-strain readout tied back to Interactions.

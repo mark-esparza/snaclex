@@ -139,6 +139,56 @@ def antibody_methods() -> dict:
     }
 
 
+def hla_methods() -> dict:
+    """Provenance for the HLA / MHC groove + drug-hypersensitivity module."""
+    from . import hla
+    return {
+        "tool": tool(),
+        "method": "Reference-annotated MHC groove mapping + curated HLA-drug "
+                  "hypersensitivity lookup",
+        "method_family": "HLA / MHC structural analysis",
+        "parameters": {
+            "fold_detection": "chain alignment to class-I heavy + beta-2-"
+                              "microglobulin (and class-II alpha/beta) references",
+            "groove_definition": "fixed reference pocket-lining positions "
+                                 "(class I pockets A-F; Saper/Bjorkman/Wiley 1991, "
+                                 "Madden 1995) — NOT blind cavity detection",
+            "reference_allele": "HLA-A*02:01 (class I groove numbering)",
+            "allele_comparison": "structure residue vs reference at each groove "
+                                 "position; charge/hydrophobicity/size deltas reuse "
+                                 "the Pockets residue-property sets",
+            "drug_table": "curated HLA↔drug hypersensitivity associations, each "
+                          "with a primary-literature citation",
+            "population_frequencies": "Allele Frequency Net Database (AFND) — "
+                                      "referenced source for allele prevalence",
+            "sequences": "IPD-IMGT/HLA nomenclature + allele sequences",
+            "peptide_docking": f"deferred (experimental): {hla.PEPTIDE_DOCKING_AVAILABLE}",
+        },
+        "interpretation": (
+            "The groove location is known and conserved, so it is annotated from a "
+            "reference set rather than detected. Allele-specific residues at pocket "
+            "positions reshape which peptides the groove presents. The drug table "
+            "is a LOOKUP, not a prediction — a listed association means the allele "
+            "is a documented risk marker for that drug's hypersensitivity."
+        ),
+        "limitations": [
+            "Groove annotation is class-I-complete; class-II is best-effort "
+            "(beta-chain, approximate).",
+            "Allele comparison is versus a single class-I reference (A*02:01); "
+            "cross-locus comparisons over-report differences.",
+            "The drug table is a curated seed set, not exhaustive; absence of a "
+            "row is not evidence of safety.",
+            "Peptide-into-groove docking is deferred to respect the synchronous "
+            "compute budget.",
+        ],
+        "disclaimer": (
+            "RESEARCH ONLY — not for clinical use. HLA-drug associations are "
+            "literature-curated risk markers for research interpretation, NOT "
+            "diagnostic, prescribing, or medical advice."
+        ),
+    }
+
+
 def variant_methods() -> dict:
     """Provenance for the ClinVar/gnomAD genome variant bridge."""
     from . import variants

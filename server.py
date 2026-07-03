@@ -35,6 +35,7 @@ from snaclex import (
     chembl,
     docking,
     evolution,
+    hla,
     interactions,
     jobs,
     pdbparse,
@@ -376,6 +377,15 @@ def _detect_antibody(structure) -> dict | None:
         return antibody.analyze(structure)
     except Exception:  # noqa: BLE001
         log.exception("Antibody detection failed")
+        return None
+
+
+def _detect_hla(structure) -> dict | None:
+    """Run MHC-fold detection defensively; never let it break structure loading."""
+    try:
+        return hla.detect(structure)
+    except Exception:  # noqa: BLE001
+        log.exception("HLA detection failed")
         return None
 
 
@@ -888,6 +898,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_evolution(qs)
         if path == "/api/variants":
             return self._api_variants(qs)
+        if path == "/api/hla":
+            return self._api_hla(qs)
         if path == "/api/antibody":
             return self._api_antibody(qs)
         if path == "/api/antibody_interface":
@@ -1008,6 +1020,7 @@ class Handler(BaseHTTPRequestHandler):
             "components": _components_json(structure),
             "pdb_data": viewer_text,
             "antibody": ab_out,
+            "hla": _detect_hla(structure),
         })
 
     def _api_job_status(self, path):
@@ -1037,6 +1050,7 @@ class Handler(BaseHTTPRequestHandler):
             "components": _components_json(structure),
             "pdb_data": text,
             "antibody": ab_out,
+            "hla": _detect_hla(structure),
         })
 
     def _api_analyze(self, qs):
@@ -1143,6 +1157,15 @@ class Handler(BaseHTTPRequestHandler):
             **evo,
             "methods": provenance.evolution_methods(),
         })
+
+    def _api_hla(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        allele = clean_text((qs.get("allele") or [""])[0], max_len=32)
+        _text, structure, _meta = _load_structure(pdb_id)
+        result = hla.analyze(structure, allele or None)
+        return self._send_json({**result, "methods": provenance.hla_methods()})
 
     def _api_variants(self, qs):
         pdb_id = (qs.get("pdb") or [""])[0]

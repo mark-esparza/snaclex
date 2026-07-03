@@ -5,6 +5,32 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added — HLA / MHC module (Phase 3 of the new-modules brief)
+- **MHC-fold detection on load** — structures are classified as MHC **class I**
+  (polymorphic heavy chain + β2-microglobulin) or **class II** (α + β chains) by
+  chain alignment to reference sequences, surfacing a new **HLA / MHC** tab and an
+  "MHC class N detected" badge. `snaclex/hla.py`, dependency-free.
+- **Reference-annotated groove** (NOT blind LIGSITE) — the peptide-binding groove
+  is annotated from a fixed reference position set (class I pockets **A–F**;
+  Saper/Bjorkman/Wiley 1991, Madden 1995), mapped onto the loaded allele's
+  numbering by sequence alignment and highlighted with a new `HLA groove pockets`
+  color mode + legend (reusing the residue-coloring path). Class II is
+  best-effort (β-chain).
+- **Allele-specific groove comparison** — each groove position is compared to a
+  class-I reference (A*02:01); allele-specific residues are reported per pocket
+  with charge / hydrophobicity / size deltas (reusing the Pockets residue-property
+  sets) and drawn as sticks in 3D.
+- **HLA↔drug hypersensitivity lookup** — a curated table (B*57:01↔abacavir,
+  B*15:02 & A*31:01↔carbamazepine, B*58:01↔allopurinol, plus dapsone/vancomycin),
+  each row cited to primary literature. Hits surface a **"Look up drug →"** button
+  that pulls the drug up in the existing Chemical/PubChem viewer. A lookup, not a
+  prediction; **RESEARCH ONLY** banner prominent (clinically adjacent). AFND /
+  IPD-IMGT/HLA credited as the population-frequency / sequence sources.
+- **Peptide-into-groove docking deferred** behind an experimental flag (kept out
+  of the synchronous compute budget), clearly labeled.
+- Pockets tab now notes the groove is reference-annotated (don't blind-detect it);
+  report section, JSON export, and `provenance.hla_methods()` added.
+
 ### Added — Genome variant bridge (Phase 2 of the new-modules brief)
 - **ClinVar / gnomAD overlay** — a new **Variants** tab resolves the loaded
   structure to its UniProt accession, pulls missense variants from the EMBL-EBI

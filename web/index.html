@@ -65,6 +65,7 @@
         <button class="tab" data-tab="pockets">Pockets</button>
         <button class="tab" data-tab="evolution">Evolution</button>
         <button class="tab" data-tab="variants">Variants</button>
+        <button class="tab" data-tab="hla">HLA / MHC</button>
         <button class="tab" data-tab="docking">Docking</button>
         <button class="tab" data-tab="benchmark">Benchmark</button>
         <button class="tab" data-tab="chemical">Chemical</button>
@@ -91,6 +92,7 @@
               <option value="conservation">Conservation</option>
               <option value="cdr">CDR loops (antibody)</option>
               <option value="variant">Variants (ClinVar/gnomAD)</option>
+              <option value="groove">HLA groove pockets</option>
             </select>
           </label>
           <label class="chk"><input type="checkbox" id="toggleSurface" /> Surface</label>
@@ -132,6 +134,20 @@
           <span class="hint" style="margin:0">Resolves this structure to its UniProt entry and overlays <b>ClinVar</b> pathogenic/benign and <b>gnomAD</b> population missense variants onto the 3D residues. Research-only — not clinical guidance. A few seconds.</span>
         </div>
         <div id="variantsContent" class="empty">No variant overlay yet. Click “Overlay variants”.</div>
+      </section>
+
+      <section class="panel" data-panel="hla">
+        <div class="dock-controls">
+          <div class="dock-row">
+            <div style="flex:2">
+              <label class="field-label">HLA allele (standard nomenclature)</label>
+              <input id="hlaAlleleInput" type="text" placeholder="HLA-B*57:01 · A*02:01 · DRB1*15:01" />
+            </div>
+            <button id="hlaBtn" class="primary">Analyze HLA</button>
+          </div>
+          <div class="hint">Assumes you already know / specify the allele (typed above or implied by the loaded PDB). Annotates the peptide-binding groove from a reference position set, compares this allele's groove to a reference, and flags known HLA-drug hypersensitivity associations. HLA typing from raw reads is out of scope.</div>
+        </div>
+        <div id="hlaContent" class="empty">Load an MHC structure (or enter an allele) and click “Analyze HLA”.</div>
       </section>
 
       <section class="panel" data-panel="docking">
