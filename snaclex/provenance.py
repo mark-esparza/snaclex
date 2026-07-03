@@ -139,6 +139,49 @@ def antibody_methods() -> dict:
     }
 
 
+def variant_methods() -> dict:
+    """Provenance for the ClinVar/gnomAD genome variant bridge."""
+    from . import variants
+    return {
+        "tool": tool(),
+        "method": "UniProt-mapped ClinVar/gnomAD missense variant overlay",
+        "method_family": "genotype-to-structure bridge",
+        "parameters": {
+            "cross_reference": "PDB → UniProt (RCSB reference_sequence_identifiers)",
+            "variant_source": "EBI Proteins API variation endpoint "
+                              "(ClinVar clinical significance + gnomAD allele "
+                              "frequencies), missense (single-residue) only",
+            "structure_mapping": "Needleman-Wunsch alignment of each structure "
+                                 "chain to the UniProt sequence (≥60% identity to "
+                                 "accept a chain)",
+            "locus_card": "NCBI E-utilities (gene → chromosome, cytogenetic band)",
+            "max_variants_per_residue": variants.MAX_VARIANTS_PER_RESIDUE,
+        },
+        "interpretation": (
+            "Each colored residue carries one or more reported missense variants. "
+            "Pathogenicity is ClinVar's clinical significance; frequency is the "
+            "max gnomAD population allele frequency. A variant is far more "
+            "interpretable when it also falls in a detected pocket, on a conserved "
+            "residue, or at an interaction contact — cross-annotated where those "
+            "analyses have been run."
+        ),
+        "limitations": [
+            "Only variants that align onto the resolved structure are shown; "
+            "isoform/numbering mismatches and unresolved loops drop coverage.",
+            "ClinVar significance is a curated database value that changes over "
+            "time and can be conflicting; absence of a variant is not evidence of "
+            "benignity.",
+            "gnomAD frequency reflects sampled populations, not universal "
+            "prevalence; the locus card is best-effort and info-only.",
+        ],
+        "disclaimer": (
+            "RESEARCH ONLY — not for clinical use. Variant pathogenicity here is a "
+            "database cross-reference for structural interpretation, NOT a "
+            "diagnosis or medical advice."
+        ),
+    }
+
+
 def evolution_methods() -> dict:
     """Provenance for the Pfam-alignment conservation analysis."""
     return {

@@ -43,6 +43,7 @@ from snaclex import (
     pubchem,
     rcsb,
     report,
+    variants,
 )
 from snaclex.http_util import FetchError
 
@@ -130,7 +131,9 @@ _CSP = (
 # Compute-heavy GET endpoints get a tighter per-IP budget plus a global
 # concurrency cap. Docking/screening are no longer here — they run through the
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
-EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution", "/api/antibody_interface"}
+EXPENSIVE_ENDPOINTS = {
+    "/api/pockets", "/api/evolution", "/api/antibody_interface", "/api/variants",
+}
 
 MAX_QUERY_LEN = 200       # single chemical / search term
 MAX_CHEMS_LEN = 2000      # batch-screening textarea
@@ -316,6 +319,23 @@ def _get_evolution(pdb_id: str) -> dict | None:
     evo.pop("_divergent_keys", None)  # internal only
     _EVO_CACHE[pid] = evo
     return evo
+
+
+_VARIANT_CACHE: dict[str, dict] = {}
+
+
+def _get_variants(pdb_id: str) -> dict:
+    """ClinVar/gnomAD variant overlay for a structure (cached like evolution)."""
+    pid = _norm_id(pdb_id)
+    if pid in _VARIANT_CACHE:
+        return _VARIANT_CACHE[pid]
+    _text, structure, _meta = _load_structure(pid)
+    uniprots = _get_uniprots(pid)
+    result = variants.analyze(structure, uniprots)
+    if len(_VARIANT_CACHE) >= _CACHE_MAX:
+        _VARIANT_CACHE.pop(next(iter(_VARIANT_CACHE)))
+    _VARIANT_CACHE[pid] = result
+    return result
 
 
 _UNIPROT_CACHE: dict[str, list] = {}
@@ -866,6 +886,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_pockets(qs)
         if path == "/api/evolution":
             return self._api_evolution(qs)
+        if path == "/api/variants":
+            return self._api_variants(qs)
         if path == "/api/antibody":
             return self._api_antibody(qs)
         if path == "/api/antibody_interface":
@@ -1121,6 +1143,15 @@ class Handler(BaseHTTPRequestHandler):
             **evo,
             "methods": provenance.evolution_methods(),
         })
+
+    def _api_variants(self, qs):
+        pdb_id = (qs.get("pdb") or [""])[0]
+        if not pdb_id:
+            return self._send_error_json("Missing 'pdb' parameter")
+        result = _get_variants(pdb_id)
+        if not result.get("available"):
+            return self._send_json(result)
+        return self._send_json({**result, "methods": provenance.variant_methods()})
 
     def _api_antibody(self, qs):
         pdb_id = (qs.get("pdb") or [""])[0]

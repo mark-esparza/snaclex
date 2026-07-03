@@ -64,6 +64,7 @@
         <button class="tab" data-tab="antibody">Antibody</button>
         <button class="tab" data-tab="pockets">Pockets</button>
         <button class="tab" data-tab="evolution">Evolution</button>
+        <button class="tab" data-tab="variants">Variants</button>
         <button class="tab" data-tab="docking">Docking</button>
         <button class="tab" data-tab="benchmark">Benchmark</button>
         <button class="tab" data-tab="chemical">Chemical</button>
@@ -89,6 +90,7 @@
               <option value="bfactor">B-factor (flexibility)</option>
               <option value="conservation">Conservation</option>
               <option value="cdr">CDR loops (antibody)</option>
+              <option value="variant">Variants (ClinVar/gnomAD)</option>
             </select>
           </label>
           <label class="chk"><input type="checkbox" id="toggleSurface" /> Surface</label>
@@ -122,6 +124,14 @@
           <span class="hint" style="margin:0">Retrieves the protein's Pfam family alignment and scores each residue &amp; pocket by evolutionary conservation. A few seconds.</span>
         </div>
         <div id="evolutionContent" class="empty">No conservation analysis yet. Click “Analyze conservation”.</div>
+      </section>
+
+      <section class="panel" data-panel="variants">
+        <div class="pocket-controls">
+          <button id="variantBtn" class="primary">Overlay variants</button>
+          <span class="hint" style="margin:0">Resolves this structure to its UniProt entry and overlays <b>ClinVar</b> pathogenic/benign and <b>gnomAD</b> population missense variants onto the 3D residues. Research-only — not clinical guidance. A few seconds.</span>
+        </div>
+        <div id="variantsContent" class="empty">No variant overlay yet. Click “Overlay variants”.</div>
       </section>
 
       <section class="panel" data-panel="docking">
@@ -189,7 +199,7 @@
       <a href="/api.html">API</a>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
-      <span class="muted">Data: RCSB · PubChem · ChEMBL · Pfam</span>
+      <span class="muted">Data: RCSB · PubChem · ChEMBL · Pfam · UniProt · ClinVar · gnomAD</span>
     </nav>
   </footer>
 

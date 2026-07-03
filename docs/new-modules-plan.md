@@ -59,12 +59,25 @@ those points are flagged.
 Deferred (backlog, per brief): germline/humanness, Chothia canonical classes,
 epitope binning.
 
-## Phases 2–4 (planned, not in this change)
+## Phase 2 — Genome variant bridge (shipped)
 
-- **Genome-variant bridge**: resolve PDB→UniProt (already have
-  `rcsb.fetch_uniprot_accessions`), pull ClinVar/gnomAD missense per protein
-  (cache like evolution), add a `variants` color mode reusing the coloring path,
-  and cross-annotate against pockets/evolution/interactions already computed.
+- **`snaclex/variants.py`** (new): resolves PDB→UniProt via the existing
+  `rcsb.fetch_uniprot_accessions`, then pulls missense variants from the EMBL-EBI
+  Proteins API variation endpoint — which aggregates **ClinVar** clinical
+  significance and **gnomAD** allele frequencies *and* ships the UniProt sequence.
+  Each chain is NW-aligned to that sequence (reusing `evolution._nw_align`) so
+  UniProt positions land on structure residues (works across author numbering and
+  homomers). Cached per structure in `server._get_variants`; `/api/variants`.
+- **Frontend**: a **Variants** tab, a `variant` color mode with a
+  pathogenicity⇄frequency toggle (both reuse the `setStyle` residue path),
+  variant details on residue click, a gene/locus card (NCBI E-utilities,
+  best-effort), and client-side cross-annotation against pockets / evolution /
+  interactions. RESEARCH-ONLY banner is prominent (clinically adjacent).
+- Same EBI host the Evolution module already depends on, so no new
+  connectivity assumptions; all fetches degrade gracefully to "data unavailable".
+
+## Phases 3–4 (planned, not yet built)
+
 - **HLA/MHC**: allele input + IPD-IMGT/HLA + AFND as the HLA analog of the
   genome bridge; reference groove-position set (not blind LIGSITE); curated
   HLA↔drug hypersensitivity table surfaced through the existing PubChem viewer;

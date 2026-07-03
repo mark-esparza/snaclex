@@ -5,6 +5,28 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added — Genome variant bridge (Phase 2 of the new-modules brief)
+- **ClinVar / gnomAD overlay** — a new **Variants** tab resolves the loaded
+  structure to its UniProt accession, pulls missense variants from the EMBL-EBI
+  Proteins API (aggregating **ClinVar** clinical significance and **gnomAD**
+  population allele frequencies), and maps each variant's UniProt position onto
+  the structure's residue numbering by aligning each chain to the UniProt
+  sequence (reusing the Evolution NW aligner). `snaclex/variants.py` +
+  `/api/variants`, cached per structure. This is a genotype→structure *bridge* —
+  no genome browser, ideogram, coordinate system, or reads.
+- **Two coloring modes** reusing the residue-coloring path — a new
+  `Variants (ClinVar/gnomAD)` viewer mode with a **pathogenicity ⇄ frequency**
+  toggle; clicking a colored residue shows its substitutions, ClinVar
+  significance and gnomAD AF.
+- **Interpretation stack** — each variant residue is cross-annotated (client
+  side) with whether it also falls in a detected **pocket**, on a **conserved**
+  residue, or at an **interaction contact** already computed this session.
+- **Gene/locus card** — gene symbol, chromosome and cytogenetic band via NCBI
+  E-utilities (best-effort, info-only, degrades gracefully).
+- **RESEARCH-ONLY** banner is prominent on the tab (clinically adjacent data),
+  with report section, JSON export, and `provenance.variant_methods()`
+  (source + retrieval date + limitations).
+
 ### Added — Antibody layer (Phase 1 of the new-modules brief)
 - **Antibody detection on load** — every loaded/uploaded structure is scanned
   for immunoglobulin variable domains. Each protein chain is typed (VH, VL,

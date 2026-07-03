@@ -19,6 +19,17 @@ const WATER = ["HOH", "WAT", "DOD", "H2O", "SOL"];
 // CDR loop highlight colors (distinct hues; the one place the viewer uses hue,
 // mirroring how the residue-coloring path is reused for conservation shades).
 const CDR_COLORS = { CDR1: "#d24d57", CDR2: "#e0823d", CDR3: "#5b8def" };
+// Variant pathogenicity colors (ClinVar), diverging pathogenic→benign.
+const VARIANT_COLORS = {
+  pathogenic: "#d24d57",
+  "likely pathogenic": "#e0823d",
+  "risk factor": "#c69214",
+  uncertain: "#8a8f99",
+  conflicting: "#8a8f99",
+  "not provided": "#b8bcc4",
+  "likely benign": "#7fae7f",
+  benign: "#3da35d",
+};
 
 // ---------- app state ----------
 const state = {
@@ -42,6 +53,8 @@ const state = {
   evolution: null,
   antibody: null,
   interface: null,
+  variants: null,
+  variantColorBy: "pathogenicity",
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -215,6 +228,8 @@ function applyStructure(id, data) {
   state.evolution = null;
   state.antibody = data.antibody || null;
   state.interface = null;
+  state.variants = null;
+  state.variantColorBy = "pathogenicity";
   state.colorMode = "mono";
   state.measureMode = false;
   state.measureAtoms = [];
@@ -226,6 +241,11 @@ function applyStructure(id, data) {
   if (mc) mc.checked = false;
   $("#evolutionContent").className = "empty";
   $("#evolutionContent").textContent = "No conservation analysis yet. Click “Analyze conservation”.";
+  const vc = $("#variantsContent");
+  if (vc) {
+    vc.className = "empty";
+    vc.textContent = "No variant overlay yet. Click “Overlay variants”.";
+  }
 
   renderOverview(data);
   renderComponents(data.components);
@@ -384,6 +404,9 @@ function rebuildScene(resetZoom) {
   }
   if (mode === "cdr" && state.antibody && state.antibody.cdr_residues) {
     applyCdrColors(v);
+  }
+  if (mode === "variant" && state.variants && state.variants.residues) {
+    applyVariantColors(v);
   }
 
   // --- hetero (ligands/ions): element CPK in element mode, else neutral ---
@@ -625,6 +648,16 @@ function setupPicking(v) {
         (p.lining_residues || []).some((rr) => rr.chain === atom.chain && rr.res_seq === atom.resi)
       );
       if (inPocket) extras.push(`lines pocket #${inPocket.index + 1}`);
+    }
+    if (!het && state.variants && state.variants.residues) {
+      const vr = state.variants.residues.find(
+        (x) => x.chain === atom.chain && x.res_seq === atom.resi
+      );
+      if (vr) {
+        const subs = vr.variants.map((s) => `${s.ref}→${s.alt}`).slice(0, 4).join(", ");
+        extras.push(`variant ${subs} · ${vr.pathogenicity || "freq-only"}` +
+          (vr.max_af != null ? ` · AF ${vr.max_af.toExponential(1)}` : ""));
+      }
     }
     const text = extras.length ? `${base}\n${extras.join(" · ")}` : base;
     state._pickLabel = v.addLabel(text, _labelStyle(atom));
@@ -1142,6 +1175,27 @@ function buildReportSections() {
     s.push({ title: "Evolutionary analysis", rows, lines });
   }
 
+  // --- Variants (ClinVar / gnomAD) ---
+  if (state.variants && state.variants.available !== false) {
+    const d = state.variants;
+    const lo = d.locus || {};
+    const rows = [
+      ["UniProt / gene", `${d.uniprot} · ${lo.gene || d.gene || "—"}`],
+      ["Locus", `${lo.chromosome || "—"}${lo.cytogenetic_band ? " " + lo.cytogenetic_band : ""}`],
+      ["Missense mapped", `${d.mapped_variant_count}/${d.variant_count} onto ${d.mapped_residue_count} residues`],
+    ];
+    const top = d.residues.slice(0, 10).map((r) => {
+      const ctx = variantContext(r);
+      return `${r.res_name}${r.res_seq}(${r.chain}) ${r.pathogenicity || "freq-only"}` +
+        (ctx.length ? ` [${ctx.join(", ")}]` : "");
+    });
+    s.push({
+      title: "Genome variants (ClinVar / gnomAD)",
+      rows,
+      lines: ["Top variant residues: " + (top.join("; ") || "none")],
+    });
+  }
+
   // --- Docking ---
   if (state.dockData) {
     const d = state.dockData;
@@ -1250,6 +1304,10 @@ function reportLimitations() {
   if (state.antibody && state.antibody.is_antibody)
     L.push(
       "Antibody chain typing and CDR ranges are a fast germline-framework-alignment heuristic (not ANARCI/IMGT-HMM numbering); CDR-H3 boundaries and unusual germlines (VHH, engineered scaffolds) may be mis-called, and liability motifs are sequence-only (no structural exposure or formulation context)."
+    );
+  if (state.variants && state.variants.available !== false)
+    L.push(
+      "Variant overlay is a database cross-reference (ClinVar significance + gnomAD frequency via the EBI Proteins API), NOT clinical guidance: significance values change over time and can be conflicting, only variants that align onto the resolved structure are shown, and absence of a variant is not evidence of benignity."
     );
   const e = state.evolution;
   if (e && e.available !== false) {
@@ -1675,6 +1733,32 @@ function applyCdrColors(v) {
   );
 }
 
+function variantFreqShade(af) {
+  // Rare (light) → common (dark) on a log scale; null AF = pale neutral.
+  if (af == null) return "#e2e2e2";
+  const t = Math.min(1, Math.max(0, (Math.log10(af) + 5) / 5)); // 1e-5..1 → 0..1
+  if (t >= 0.8) return "#1a1a1a";
+  if (t >= 0.6) return "#555555";
+  if (t >= 0.4) return "#888888";
+  if (t >= 0.2) return "#aaaaaa";
+  return "#cccccc";
+}
+
+function applyVariantColors(v) {
+  const byFreq = state.variantColorBy === "frequency";
+  const groups = {};
+  state.variants.residues.forEach((r) => {
+    const shade = byFreq
+      ? variantFreqShade(r.max_af)
+      : VARIANT_COLORS[r.pathogenicity] || "#8a8f99";
+    const key = r.chain + "|" + shade;
+    (groups[key] = groups[key] || { chain: r.chain, shade, resi: [] }).resi.push(r.res_seq);
+  });
+  Object.values(groups).forEach((g) =>
+    v.setStyle({ chain: g.chain, resi: g.resi }, { cartoon: { color: g.shade } })
+  );
+}
+
 function applyConservationColors(v) {
   const groups = {};
   state.evolution.residues.forEach((r) => {
@@ -1821,6 +1905,147 @@ function renderInterface(d) {
     <div class="res-chips">${chips(d.paratope)}</div>
     <div class="section-h">Epitope (antigen)</div>
     <div class="res-chips">${chips(d.epitope)}</div>`;
+}
+
+// ================= genome variant bridge =================
+async function runVariants() {
+  if (!state.pdbId) {
+    setStatus("Load a structure first.", "error");
+    return;
+  }
+  switchTab("variants");
+  setStatus("Resolving UniProt and overlaying ClinVar/gnomAD missense variants…", "busy");
+  $("#variantBtn").disabled = true;
+  try {
+    const data = await getJSON(`/api/variants?pdb=${state.pdbId}`);
+    if (!data.available) {
+      state.variants = null;
+      $("#variantsContent").className = "empty";
+      $("#variantsContent").textContent = data.reason || "No variant data available.";
+      setStatus("No mappable ClinVar/gnomAD variants for this structure.", "error");
+      return;
+    }
+    state.variants = data;
+    renderVariants(data);
+    setStatus(
+      `${data.mapped_variant_count} of ${data.variant_count} missense variants mapped ` +
+        `onto ${data.mapped_residue_count} residues (UniProt ${data.uniprot}).`
+    );
+    compileReport();
+  } catch (err) {
+    setStatus(`Variant overlay failed: ${err.message}`, "error");
+  } finally {
+    $("#variantBtn").disabled = false;
+  }
+}
+
+// Cross-module interpretation (2.4): is a variant residue also in a detected
+// pocket, on a conserved residue, or at an interaction contact already computed?
+function variantContext(r) {
+  const tags = [];
+  if ((state.pockets || []).length) {
+    const inPocket = state.pockets.find((p) =>
+      (p.lining_residues || []).some((lr) => lr.chain === r.chain && lr.res_seq === r.res_seq)
+    );
+    if (inPocket) tags.push(`pocket #${inPocket.index + 1}`);
+  }
+  if (state.evolution && state.evolution.residues) {
+    const er = state.evolution.residues.find(
+      (x) => x.chain === r.chain && x.res_seq === r.res_seq
+    );
+    if (er && er.conservation != null && er.conservation >= 0.5)
+      tags.push(`conserved ${er.conservation}`);
+  }
+  const prof = (state.dockPose && state.dockPose.profile) || state.profile;
+  if (prof && prof.contact_residues) {
+    const c = prof.contact_residues.find(
+      (x) => x.chain === r.chain && x.res_seq === r.res_seq
+    );
+    if (c) tags.push("contact");
+  }
+  return tags;
+}
+
+function renderVariants(d) {
+  const c = $("#variantsContent");
+  c.className = "";
+  const lo = d.locus || {};
+  const locusCard = `
+    <div class="meta-grid">
+      ${cellEvo("UniProt", d.uniprot || "—")}
+      ${cellEvo("Gene", lo.gene || d.gene || "—")}
+      ${cellEvo("Chromosome", lo.chromosome || "—")}
+      ${cellEvo("Cytogenetic band", lo.cytogenetic_band || "—")}
+      ${cellEvo("Mapped variants", `${d.mapped_variant_count} / ${d.variant_count}`)}
+      ${cellEvo("Residues affected", d.mapped_residue_count)}
+    </div>`;
+
+  const rows = d.residues
+    .map((r) => {
+      const ctx = variantContext(r);
+      const alleles = r.variants
+        .map((v) => `${v.ref}→${v.alt}`)
+        .slice(0, 4)
+        .join(", ");
+      const sig = r.pathogenicity || "—";
+      const af = r.max_af == null ? "—" : r.max_af.toExponential(1);
+      const sw = `<span class="var-dot" style="background:${VARIANT_COLORS[r.pathogenicity] || "#8a8f99"}"></span>`;
+      return `<tr data-focus data-chain="${r.chain}" data-resi="${r.res_seq}">
+        <td>${sw}<b>${r.res_name}${r.res_seq}</b> <span class="muted">${r.chain}</span></td>
+        <td>${sig}</td>
+        <td>${af}</td>
+        <td>${alleles}${r.variants.length > 4 ? " …" : ""}</td>
+        <td>${ctx.length ? ctx.map((t) => `<span class="ctx-tag">${t}</span>`).join(" ") : "—"}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const summary = Object.entries(d.pathogenicity_summary || {})
+    .map(([k, n]) => `<span class="res-chip"><b>${k}</b> <span class="rd">${n}</span></span>`)
+    .join("");
+
+  c.innerHTML = `
+    <div class="pharm-match miss"><b>RESEARCH ONLY — not for clinical use.</b> Variant pathogenicity is a ClinVar database cross-reference for structural interpretation, not a diagnosis or medical advice.</div>
+    ${locusCard}
+    <div class="var-toggle">
+      <button id="varColorBtn" class="primary">Color structure by variants →</button>
+      <span class="seg">
+        <button class="seg-btn" data-by="pathogenicity">Pathogenicity</button>
+        <button class="seg-btn" data-by="frequency">Frequency</button>
+      </span>
+    </div>
+    <div class="section-h">Variant residues (${d.mapped_residue_count})</div>
+    <div class="res-chips" style="margin-bottom:10px">${summary}</div>
+    <table class="data">
+      <thead><tr><th>Residue</th><th>ClinVar</th><th>gnomAD AF</th><th>Substitutions</th><th>Structural context</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="5">No mapped variants.</td></tr>`}</tbody>
+    </table>
+    <div class="hint">“Structural context” combines this overlay with any Pockets / Evolution / Interactions results you have already run — a variant in a pocket, on a conserved residue, or at a contact is more interpretable than one on a tolerant surface loop.</div>
+    <div class="disclaimer">Source: ${d.source}. Retrieved ${d.retrieved_utc}.</div>
+    ${provenanceCardHTML(d.methods)}`;
+
+  const applyBy = () => {
+    state.colorMode = "variant";
+    const cm = $("#colorMode");
+    if (cm) cm.value = "variant";
+    c.querySelectorAll(".seg-btn").forEach((b) =>
+      b.classList.toggle("active", b.dataset.by === state.variantColorBy)
+    );
+    rebuildScene(false);
+  };
+  $("#varColorBtn").addEventListener("click", () => {
+    applyBy();
+    switchTab("viewer");
+  });
+  c.querySelectorAll(".seg-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.variantColorBy = b.dataset.by;
+      applyBy();
+    })
+  );
+  c.querySelectorAll(".seg-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.by === state.variantColorBy)
+  );
 }
 
 // ================= chemical lookup =================
@@ -2099,6 +2324,7 @@ function exportSessionJSON() {
     antibody: state.antibody
       ? { ...state.antibody, interface: state.interface || null }
       : null,
+    variants: state.variants || null,
     docking: state.dockData || null,
     screening: state.screen || null,
     chemical: state.chemical || null,
@@ -2259,6 +2485,8 @@ function init() {
   });
   $("#detectBtn").addEventListener("click", detectPockets);
   $("#evoBtn").addEventListener("click", runEvolution);
+  const variantBtn = $("#variantBtn");
+  if (variantBtn) variantBtn.addEventListener("click", runVariants);
   $("#colorMode").addEventListener("change", (e) => {
     const mode = e.target.value;
     if (mode === "conservation" && !state.evolution) {
@@ -2270,6 +2498,12 @@ function init() {
     if (mode === "cdr" && !(state.antibody && state.antibody.is_antibody)) {
       e.target.value = state.colorMode || "mono";
       setStatus("No antibody variable domain detected in this structure — CDR coloring is unavailable.", "error");
+      return;
+    }
+    if (mode === "variant" && !(state.variants && state.variants.residues)) {
+      e.target.value = state.colorMode || "mono";
+      setStatus("Run the Variants tab first to color by ClinVar/gnomAD variants.", "error");
+      runVariants();
       return;
     }
     state.colorMode = mode;
