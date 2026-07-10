@@ -33,15 +33,19 @@ from snaclex import (
     benchmark,
     chembl,
     docking,
+    evidence,
     evolution,
+    idresolve,
     interactions,
     jobs,
     pdbparse,
     pockets,
+    proteinrecord,
     provenance,
     pubchem,
     rcsb,
     report,
+    seqanalysis,
 )
 from snaclex.http_util import FetchError
 
@@ -841,6 +845,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_evolution(qs)
         if path == "/api/search":
             return self._api_search(qs)
+        if path == "/api/resolve":
+            return self._api_resolve(qs)
+        if path == "/api/protein":
+            return self._api_protein(qs)
+        if path == "/api/sequence_analysis":
+            return self._api_sequence_analysis(qs)
+        if path == "/api/structure_availability":
+            return self._api_structure_availability(qs)
+        if path == "/api/evidence":
+            return self._api_evidence(qs)
         if path == "/api/version":
             return self._api_version(qs)
         if path == "/api/docs":
@@ -867,7 +881,7 @@ class Handler(BaseHTTPRequestHandler):
             self._access_log("POST", path)
 
     def _dispatch_post(self, path):
-        if path not in ("/api/jobs", "/api/upload"):
+        if path not in ("/api/jobs", "/api/upload", "/api/protein/sequence"):
             return self._send_error_json("Not found", status=404)
 
         ip = self._client_ip()
@@ -885,6 +899,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/upload":
             return self._guarded_upload()
+        if path == "/api/protein/sequence":
+            return self._api_protein_sequence()
 
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > 8192:
@@ -905,6 +921,29 @@ class Handler(BaseHTTPRequestHandler):
 
         job_id = JOBS.submit(_JOB_RUNNERS[kind], params)
         return self._send_json({"job_id": job_id, "status": "queued"}, status=202)
+
+    def _api_protein_sequence(self):
+        """POST {fasta|sequence} → resolve + build a sequence-first ProteinRecord."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > 200_000:
+            return self._send_error_json("Missing or oversized request body")
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (ValueError, OSError):
+            return self._send_error_json("Invalid JSON body")
+        if not isinstance(payload, dict):
+            return self._send_error_json("Body must be a JSON object")
+        fasta = payload.get("fasta") or payload.get("sequence") or ""
+        if not isinstance(fasta, str) or not fasta.strip():
+            return self._send_error_json("Provide a 'fasta' or 'sequence' string")
+        try:
+            ph = float(payload.get("ph", 7.0))
+        except (TypeError, ValueError):
+            ph = 7.0
+        record, err = self._build_protein(fasta, ph=ph)
+        if err:
+            return self._send_error_json(err)
+        return self._send_json(record)
 
     def _guarded_upload(self):
         try:
@@ -1084,6 +1123,159 @@ class Handler(BaseHTTPRequestHandler):
         if not query:
             return self._send_error_json("Missing 'q' parameter")
         return self._send_json({"results": rcsb.search_by_name(query, limit=10)})
+
+    # ---- Platform (sequence-first) endpoints -------------------------
+    @staticmethod
+    def _parse_ph(qs):
+        try:
+            return float((qs.get("ph") or ["7.0"])[0])
+        except (TypeError, ValueError):
+            return 7.0
+
+    def _api_resolve(self, qs):
+        query = clean_text((qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'q' parameter")
+        result = idresolve.resolve(
+            query,
+            taxon=(qs.get("taxon") or [None])[0],
+            accession=(qs.get("accession") or [None])[0],
+        )
+        # Drop internal fragment carriers before returning.
+        result.pop("_uniprot_fragment", None)
+        result.pop("_uniparc_fragment", None)
+        return self._send_json(result)
+
+    def _build_protein(self, query, *, taxon=None, accession=None, ph=7.0,
+                       with_structures=True):
+        resolution = idresolve.resolve(query, taxon=taxon, accession=accession)
+        if resolution.get("is_chemical"):
+            return None, "Input looks like a chemical — use /api/chemical."
+        # Ambiguous name/gene with no explicit pick: return candidates for the UI.
+        if resolution.get("candidates") and not resolution.get("chosen"):
+            return {"needs_disambiguation": True,
+                    "candidates": resolution["candidates"],
+                    "warnings": resolution.get("warnings", [])}, None
+        record = proteinrecord.build_record(resolution, ph=ph)
+        acc = record["accessions"].get("uniprot_primary")
+        if with_structures and acc:
+            seq_len = (record.get("sequence") or {}).get("length")
+            availability = proteinrecord.structure_availability(
+                acc, sequence_length=seq_len)
+            proteinrecord.attach_structures(record, availability)
+        else:
+            record["structures"]["tier"] = "sequence_only"
+        return record, None
+
+    def _api_protein(self, qs):
+        query = clean_text((qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'q' parameter")
+        record, err = self._build_protein(
+            query, taxon=(qs.get("taxon") or [None])[0],
+            accession=(qs.get("accession") or [None])[0], ph=self._parse_ph(qs))
+        if err:
+            return self._send_error_json(err)
+        return self._send_json(record)
+
+    def _api_sequence_analysis(self, qs):
+        acc = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not acc:
+            return self._send_error_json("Missing 'acc' parameter")
+        record, err = self._build_protein(
+            acc, ph=self._parse_ph(qs), with_structures=False)
+        if err:
+            return self._send_error_json(err)
+        return self._send_json({
+            "canonical_id": record.get("canonical_id"),
+            "accession": record["accessions"].get("uniprot_primary"),
+            "sequence_analysis": record.get("sequence_analysis"),
+            "evidence_category": "calculated",
+        })
+
+    def _api_structure_availability(self, qs):
+        acc = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not acc:
+            return self._send_error_json("Missing 'acc' parameter")
+        return self._send_json(proteinrecord.structure_availability(acc))
+
+    def _api_evidence(self, qs):
+        protein_q = clean_text((qs.get("protein") or [""])[0])
+        chem_q = clean_text((qs.get("chemical") or qs.get("chem") or [""])[0])
+        if not protein_q or not chem_q:
+            return self._send_error_json("Both 'protein' and 'chemical' are required")
+
+        resolution = idresolve.resolve(protein_q)
+        up = resolution.get("_uniprot_fragment") or {}
+        acc = (resolution.get("chosen") or {}).get("accession")
+        taxon = (resolution.get("chosen") or {}).get("taxon_id")
+        protein_ref = {"type": "protein",
+                       "ref": proteinrecord.canonical_id(taxon, acc)}
+        gene_ids = [e["id"] for e in (up.get("cross_references") or {}).get("GeneID", [])]
+
+        compound = pubchem.lookup_compound(chem_q)
+        cid = compound.get("cid")
+        identity = {"cid": cid}
+        try:
+            identity.update(pubchem.fetch_identity(cid))
+            identity["parent_cid"] = pubchem.fetch_parent_cid(cid)
+        except FetchError:
+            pass
+        chemical_ref = {"type": "compound", "ref": f"PubChem:CID:{cid}"}
+        chem_form = {"matched_as": "exact", "cid": cid,
+                     "inchikey": identity.get("inchikey")}
+
+        gathered = []
+        # Level B — PubChem BioAssay, attributed only when the assay target's
+        # GeneID matches this protein's Gene cross-reference. Without a GeneID we
+        # cannot confirm the target is *this* protein, so we do NOT level the rows
+        # (avoids over-claiming) and say so in the note.
+        rows = pubchem.bioassay_summary(cid) if cid else []
+        if gene_ids:
+            for row in rows:
+                if str(row.get("target_geneid")) in gene_ids:
+                    gathered.append(evidence.level_b_from_bioassay(
+                        protein_ref=protein_ref["ref"],
+                        chemical_ref=chemical_ref["ref"],
+                        assay_row=row, chemical_form=chem_form))
+            b_note = (f"BioAssay rows attributed as Level B where target GeneID ∈ "
+                      f"{gene_ids} ({len(gathered)} of {len(rows)} rows matched)")
+        else:
+            b_note = (f"no GeneID cross-reference for this protein — {len(rows)} "
+                      "BioAssay rows found for the compound but none attributed as "
+                      "Level B (cannot confirm the assay target is this protein)")
+
+        # Structure availability drives whether Level E docking may be offered.
+        availability = proteinrecord.structure_availability(acc) if acc else {
+            "tier": "sequence_only", "best_for_docking": None}
+
+        return self._send_json({
+            "protein": {"query": protein_q, "accession": acc,
+                        "ref": protein_ref["ref"], "gene_ids": gene_ids},
+            "chemical": {"query": chem_q, "cid": cid,
+                         "inchikey": identity.get("inchikey"),
+                         "parent_cid": identity.get("parent_cid")},
+            "evidence": evidence.rank(gathered),
+            "summary": evidence.summarize(gathered),
+            "docking": {
+                "available": bool(availability.get("best_for_docking")),
+                "structure": availability.get("best_for_docking"),
+                "tier": availability.get("tier"),
+                "note": ("Level E docking is a SEPARATE hypothesis. Submit via "
+                         "POST /api/jobs (kind=dock); the result is a fit score "
+                         "(lower=better), NOT a binding affinity, and is never "
+                         "merged with Level A/B evidence."),
+            },
+            "levels_not_gathered_in_slice": {
+                "A": "requires per-PDB-entry ligand→PubChem mapping (Phase 1 follow-up)",
+                "C": "curated association sources are Phase 3",
+                "D": "homology transfer is Phase 2",
+                "F": "ML/similarity prediction is Phase 4",
+            },
+            "notes": [b_note,
+                      "Evidence levels are never merged; see /api/docs and "
+                      "docs/platform/06-evidence-ranking.md"],
+        })
 
     def _api_version(self, qs):
         return self._send_json({

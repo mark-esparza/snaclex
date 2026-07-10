@@ -125,6 +125,62 @@ def fetch_uniprot_accessions(pdb_id: str) -> list[str]:
     return accs
 
 
+def search_by_uniprot(accession: str, *, limit: int = 25) -> list[dict]:
+    """Return PDB polymer entities that reference a given UniProt accession.
+
+    Uses the RCSB Search API filtering on the polymer-entity reference-sequence
+    identifier, so it answers "does this protein have an experimental structure?"
+    without downloading anything. Returns ``[{pdb_id, entity, entity_id}]``.
+
+    VERIFY: the exact attribute path is pinned to the current schema
+    (``rcsb_polymer_entity_container_identifiers.reference_sequence_identifiers``)
+    and should be confirmed against a live response before production reliance.
+    """
+    import json
+    import urllib.parse
+
+    acc = (accession or "").strip()
+    if not acc:
+        return []
+    payload = {
+        "query": {
+            "type": "group",
+            "logical_operator": "and",
+            "nodes": [
+                {"type": "terminal", "service": "text", "parameters": {
+                    "attribute": "rcsb_polymer_entity_container_identifiers."
+                                 "reference_sequence_identifiers.database_accession",
+                    "operator": "exact_match", "value": acc}},
+                {"type": "terminal", "service": "text", "parameters": {
+                    "attribute": "rcsb_polymer_entity_container_identifiers."
+                                 "reference_sequence_identifiers.database_name",
+                    "operator": "exact_match", "value": "UniProt"}},
+            ],
+        },
+        "return_type": "polymer_entity",
+        "request_options": {"paginate": {"start": 0, "rows": limit}},
+    }
+    url = ("https://search.rcsb.org/rcsbsearch/v2/query?json="
+           + urllib.parse.quote(json.dumps(payload)))
+    try:
+        data = fetch_json(url)
+    except FetchError:
+        return []
+    return parse_polymer_entity_search(data)
+
+
+def parse_polymer_entity_search(data: dict) -> list[dict]:
+    """Parse a polymer_entity search result (identifiers look like '4MNE_1')."""
+    out: list[dict] = []
+    for item in (data or {}).get("result_set", []):
+        ident = item.get("identifier") or ""
+        pdb_id, _, entity = ident.partition("_")
+        if pdb_id:
+            out.append({"pdb_id": pdb_id.upper(), "entity": entity or None,
+                        "entity_id": ident})
+    return out
+
+
 def fetch_entry_summaries(ids: list[str]) -> dict:
     """Batch-fetch {pdb_id: {title, organism}} for several entries at once."""
     if not ids:

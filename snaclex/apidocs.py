@@ -57,6 +57,53 @@ _ENDPOINTS = [
         "returns": "ranked PDB full-text search results",
     },
     {
+        "method": "GET", "path": "/api/resolve",
+        "params": {"q": "protein/gene/accession/PDB/FASTA/variant (required)",
+                   "taxon": "optional NCBI taxon id filter",
+                   "accession": "optional explicit accession to disambiguate"},
+        "returns": "Stage 1/2: query_type, candidates, cross-reference graph, "
+                   "identity key (accession+taxon+checksum). Sequence-first.",
+    },
+    {
+        "method": "GET", "path": "/api/protein",
+        "params": {"q": "any protein identifier or FASTA (required)",
+                   "taxon": "optional taxon filter", "accession": "optional pick",
+                   "ph": "pH for estimated net charge (default 7.0)"},
+        "returns": "unified sequence-first ProteinRecord: identity, sequence + "
+                   "calculated analysis, annotations, structure availability "
+                   "(experimental→predicted→sequence-only), provenance. Returns "
+                   "{needs_disambiguation, candidates} when a name/gene is ambiguous.",
+    },
+    {
+        "method": "POST", "path": "/api/protein/sequence",
+        "body": {"fasta": "raw FASTA or amino-acid sequence (required)",
+                 "ph": "optional pH for net charge"},
+        "returns": "same ProteinRecord as GET /api/protein, resolved from the "
+                   "sequence via the CRC-64 → UniParc → UniProt bridge.",
+    },
+    {
+        "method": "GET", "path": "/api/sequence_analysis",
+        "params": {"acc": "protein identifier (required)", "ph": "optional pH"},
+        "returns": "Stage 3 calculated metrics: MW, pI, charge@pH, GRAVY, "
+                   "composition, hydropathy profile, low-complexity regions.",
+    },
+    {
+        "method": "GET", "path": "/api/structure_availability",
+        "params": {"acc": "UniProt accession (required)"},
+        "returns": "Stage 4 hierarchy: experimental PDB entities, AlphaFold "
+                   "predicted models (pLDDT-gated docking suitability), or "
+                   "sequence-only; with warnings. Predicted never shown as experimental.",
+    },
+    {
+        "method": "GET", "path": "/api/evidence",
+        "params": {"protein": "protein identifier (required)",
+                   "chemical": "chemical name/CID/InChIKey (required)"},
+        "returns": "typed A–F protein–chemical evidence, never merged: Level B "
+                   "from PubChem BioAssay (incl. inactives), plus a separate "
+                   "docking (Level E) note. Docking scores are fit scores, not "
+                   "affinities. Summary reports direct vs predicted counts.",
+    },
+    {
         "method": "GET", "path": "/api/version",
         "params": {},
         "returns": "name, version, research_only",

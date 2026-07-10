@@ -5,6 +5,35 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Sequence-first platform (Phase 1 — expansion)
+- **New capability: analyze any cataloged protein, structure or not.** SnaCleX
+  now builds a unified, sequence-first **ProteinRecord** that exists even when no
+  crystal/cryo-EM/NMR structure is available — closing the app's biggest gap
+  (previously PDB-only). Full design set in [`docs/platform/`](docs/platform/).
+- **New source adapters** (separate, offline-testable, provenance-stamped):
+  `uniprot.py` (UniProtKB — primary annotation, Swiss-Prot vs TrEMBL),
+  `uniparc.py` (UniParc — sequence archive / identity bridge),
+  `ncbi.py` (NCBI Protein / RefSeq via E-utilities, optional `NCBI_API_KEY`),
+  `alphafold.py` (AlphaFold DB — predicted models, pLDDT bands, PAE, docking gate).
+  RCSB and PubChem adapters extended (by-UniProt structure search; BioAssay
+  evidence + InChIKey/parent normalization).
+- **New services**: `idresolve.py` (query interpretation + cross-reference graph;
+  identity by accession+taxon+checksum, never by name/gene alone),
+  `seqanalysis.py` (calculated MW/pI/charge@pH/GRAVY/composition/low-complexity —
+  pure, always available), `proteinrecord.py` (record assembly + Stage-4 structure
+  hierarchy), `evidence.py` (**universal evidence object + A–F levels with hard
+  invariants** — a docking score can never be an affinity; levels never merge),
+  `checksum.py` (SWISS-PROT CRC-64 + MD5/SHA-256 sequence identity).
+- **New API endpoints** (documented in `/api/docs`): `GET /api/resolve`,
+  `GET /api/protein`, `POST /api/protein/sequence`, `GET /api/sequence_analysis`,
+  `GET /api/structure_availability`, `GET /api/evidence`.
+- **Existing structural tooling preserved** as the modular Structural Analysis
+  component (analyze/interactions/pockets/evolution/docking unchanged).
+- **~60 new offline tests** (adapters, evidence invariants, sequence analysis,
+  identifier resolution, record assembly, platform endpoints). Suite stays fully
+  offline and dependency-free. Live source fields are marked `⚠ VERIFY` where the
+  environment's egress policy blocked round-trip confirmation.
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,
