@@ -34,6 +34,19 @@ All notable changes to SnaCleX are documented here. This project adheres to
   offline and dependency-free. Live source fields are marked `⚠ VERIFY` where the
   environment's egress policy blocked round-trip confirmation.
 
+### Predicted structures & enrichment (Phase 2 — in progress)
+- **Confidence-aware AlphaFold handling** — `alphafold.build_confidence` derives
+  confidence bands, low-confidence and disordered regions, and a docking gate
+  from the model's **real per-residue pLDDT** (B-factor column), not just the API
+  summary metric. New `GET /api/model_confidence?acc=...` fetches coordinates on
+  demand (kept out of the lightweight availability path) so a low-confidence
+  model is never marked dockable.
+- **InterPro enrichment adapter** (`interpro.py`) — optional and env-gated
+  (`SNACLEX_ENABLE_INTERPRO`), provenance-stamped, degrades gracefully; families
+  and domains are kept **separate** from curated UniProt domains, each
+  source-labelled. New `GET /api/domains?acc=...`.
+- +10 offline tests (InterPro parse/gating, confidence gate, both endpoints).
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,

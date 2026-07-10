@@ -204,6 +204,21 @@ class TestAlphafold(unittest.TestCase):
         self.assertTrue(alphafold.docking_assessment({"global_plddt_mean": 95})["docking_suitable"])
         self.assertFalse(alphafold.docking_assessment({"global_plddt_mean": 40})["docking_suitable"])
 
+    def test_build_confidence_high(self):
+        pdb = "\n".join(_ca_line(i, i, 95.0) for i in range(1, 6))
+        conf = alphafold.build_confidence({"model_id": "AF-X-F1"}, pdb)
+        self.assertEqual(conf["n_residues"], 5)
+        self.assertEqual(conf["mean_plddt"], 95.0)
+        self.assertTrue(conf["docking_suitable"])
+        self.assertEqual(conf["low_confidence_regions"], [])
+
+    def test_build_confidence_low_blocks_docking(self):
+        pdb = "\n".join(_ca_line(i, i, 40.0) for i in range(1, 6))
+        conf = alphafold.build_confidence({"model_id": "AF-X-F1"}, pdb)
+        self.assertFalse(conf["docking_suitable"])
+        self.assertTrue(conf["low_confidence_regions"])
+        self.assertTrue(conf["disordered_regions"])
+
 
 # --- RCSB search parse ------------------------------------------------------
 class TestRcsbSearch(unittest.TestCase):

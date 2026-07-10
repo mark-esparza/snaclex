@@ -185,7 +185,8 @@ snaclex/
   uniprot.py           UniProtKB (primary annotation; Swiss-Prot vs TrEMBL)
   uniparc.py           UniParc (sequence archive / identity bridge)
   ncbi.py              NCBI Protein / RefSeq (E-utilities)
-  alphafold.py         AlphaFold DB (predicted models, pLDDT, PAE)
+  alphafold.py         AlphaFold DB (predicted models, pLDDT, PAE, confidence gate)
+  interpro.py          InterPro families/domains (optional, env-gated)
   # ── Structural Analysis component (existing, preserved) ──────────
   pdbparse.py          dependency-free PDB + mmCIF parser
   interactions.py      atomic interaction profiler
@@ -222,6 +223,8 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `POST /api/protein/sequence` | build a ProteinRecord from raw FASTA |
 | `GET /api/sequence_analysis?acc=...` | calculated MW/pI/charge/GRAVY/composition |
 | `GET /api/structure_availability?acc=...` | experimental → AlphaFold → sequence-only hierarchy |
+| `GET /api/domains?acc=...` | curated (UniProt) + optional InterPro domains, source-labelled |
+| `GET /api/model_confidence?acc=...` | AlphaFold per-residue pLDDT bands + docking gate |
 | `GET /api/evidence?protein=...&chemical=...` | typed A–F protein–chemical evidence (never merged) |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
 | `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |

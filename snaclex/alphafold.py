@@ -155,6 +155,31 @@ def low_confidence_regions(plddt: list[float], threshold: float = 70.0,
     return regions
 
 
+def build_confidence(model: dict, pdb_text: str) -> dict:
+    """Confidence-aware summary of a predicted model from its real coordinates.
+
+    Combines per-residue pLDDT (from the model's B-factor column) into confidence
+    bands, low-confidence/disordered regions, and a docking gate driven by the
+    *measured* mean pLDDT (not just the API's global metric). Pure/offline once
+    the PDB text is in hand.
+    """
+    plddt = parse_plddt(pdb_text)
+    assessment = docking_assessment(model, plddt)
+    return {
+        "model_id": model.get("model_id"),
+        "n_residues": len(plddt),
+        "mean_plddt": (round(assessment["mean_plddt"], 2)
+                       if assessment["mean_plddt"] is not None else None),
+        "confidence_bands": confidence_bands(plddt),
+        "low_confidence_regions": low_confidence_regions(plddt),
+        "disordered_regions": low_confidence_regions(plddt, threshold=50.0),
+        "docking_suitable": assessment["docking_suitable"],
+        "docking_block_reason": assessment["docking_block_reason"],
+        "note": ("pLDDT is a per-residue confidence (0-100), not an experimental "
+                 "B-factor; low-confidence regions are unreliable for docking."),
+    }
+
+
 def docking_assessment(model: dict, plddt: list[float] | None = None) -> dict:
     """Decide whether a predicted model is suitable for docking (Stage 4 gate).
 

@@ -95,6 +95,20 @@ _ENDPOINTS = [
                    "sequence-only; with warnings. Predicted never shown as experimental.",
     },
     {
+        "method": "GET", "path": "/api/domains",
+        "params": {"acc": "protein identifier (required)"},
+        "returns": "curated (UniProt) domains + optional InterPro families/domains "
+                   "(env-gated via SNACLEX_ENABLE_INTERPRO), each source-labelled "
+                   "and kept separate.",
+    },
+    {
+        "method": "GET", "path": "/api/model_confidence",
+        "params": {"acc": "UniProt accession (required)"},
+        "returns": "confidence-aware AlphaFold model summary from real per-residue "
+                   "pLDDT: confidence bands, low-confidence/disordered regions, and "
+                   "a docking gate (low-confidence models are not marked dockable).",
+    },
+    {
         "method": "GET", "path": "/api/evidence",
         "params": {"protein": "protein identifier (required)",
                    "chemical": "chemical name/CID/InChIKey (required)"},

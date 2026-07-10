@@ -33,10 +33,12 @@ from snaclex import (
     benchmark,
     chembl,
     docking,
+    alphafold,
     evidence,
     evolution,
     idresolve,
     interactions,
+    interpro,
     jobs,
     pdbparse,
     pockets,
@@ -853,6 +855,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_sequence_analysis(qs)
         if path == "/api/structure_availability":
             return self._api_structure_availability(qs)
+        if path == "/api/domains":
+            return self._api_domains(qs)
+        if path == "/api/model_confidence":
+            return self._api_model_confidence(qs)
         if path == "/api/evidence":
             return self._api_evidence(qs)
         if path == "/api/version":
@@ -1198,6 +1204,53 @@ class Handler(BaseHTTPRequestHandler):
         if not acc:
             return self._send_error_json("Missing 'acc' parameter")
         return self._send_json(proteinrecord.structure_availability(acc))
+
+    def _api_domains(self, qs):
+        query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'acc' parameter")
+        resolution = idresolve.resolve(query)
+        up = resolution.get("_uniprot_fragment") or {}
+        acc = (resolution.get("chosen") or {}).get("accession")
+        curated = [dict(d, source="UniProtKB") for d in (up.get("domains_motifs") or [])]
+        # Optional InterPro enrichment — clearly separated and source-labelled.
+        interpro_result = interpro.fetch_domains(acc) if acc else {
+            "available": False, "reason": "no UniProt accession resolved", "entries": []}
+        return self._send_json({
+            "accession": acc,
+            "curated": {"source": "UniProtKB", "domains": curated},
+            "interpro": interpro_result,
+            "note": "Curated (UniProt) and InterPro domains are kept separate and "
+                    "each carries its source; InterPro is optional/env-gated.",
+        })
+
+    def _api_model_confidence(self, qs):
+        acc = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not acc:
+            return self._send_error_json("Missing 'acc' parameter")
+        models = alphafold.fetch_models(acc)
+        if not models:
+            return self._send_json({
+                "available": False,
+                "reason": "no AlphaFold model for this accession — sequence-only analysis remains available",
+                "accession": acc})
+        model = models[0]["data"]
+        pdb_url = model.get("pdb_url")
+        if not pdb_url:
+            return self._send_json({"available": False,
+                                    "reason": "model has no downloadable coordinates",
+                                    "model": model})
+        pdb_text = alphafold.fetch_model_pdb(pdb_url)
+        confidence = alphafold.build_confidence(model, pdb_text)
+        return self._send_json({
+            "available": True,
+            "accession": acc,
+            "model": {k: model.get(k) for k in
+                      ("model_id", "version", "coverage_fraction", "fragmented",
+                       "pae_available")},
+            "confidence": confidence,
+            "provenance": models[0]["provenance"],
+        })
 
     def _api_evidence(self, qs):
         protein_q = clean_text((qs.get("protein") or [""])[0])

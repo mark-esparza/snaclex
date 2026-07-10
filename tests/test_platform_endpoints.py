@@ -144,6 +144,56 @@ class TestPlatformEndpoints(unittest.TestCase):
         resp, out = self._get("/api/evidence?protein=P00519")
         self.assertEqual(resp.status, 400)
 
+    def test_domains_separates_sources(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["domains_motifs"] = [
+            {"type": "domain", "name": "Protein kinase", "start": 242, "end": 493}]
+        interpro_out = {"available": True, "entries": [
+            {"accession": "IPR000719", "name": "Protein kinase domain",
+             "type": "domain", "source": "InterPro", "locations": [{"start": 242, "end": 493}]}]}
+        with mock.patch.object(server.idresolve, "resolve", return_value=res), \
+             mock.patch.object(server.interpro, "fetch_domains", return_value=interpro_out):
+            resp, out = self._get("/api/domains?acc=P00519")
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(out["curated"]["source"], "UniProtKB")
+        self.assertEqual(out["curated"]["domains"][0]["source"], "UniProtKB")
+        self.assertTrue(out["interpro"]["available"])
+        self.assertEqual(out["interpro"]["entries"][0]["source"], "InterPro")
+
+    def test_model_confidence_gates_docking(self):
+        models = [{"data": {"model_id": "AF-P00519-F1",
+                            "pdb_url": "https://x/AF-P00519-F1-model_v4.pdb",
+                            "version": 4, "coverage_fraction": 1.0,
+                            "fragmented": False, "pae_available": True},
+                   "provenance": {"source": "AlphaFold DB"}}]
+
+        def _ca(serial, b):
+            line = list(" " * 80)
+
+            def put(col, s):
+                for i, ch in enumerate(s):
+                    line[col - 1 + i] = ch
+            put(1, "ATOM"); put(7, f"{serial:>5}"); put(13, "CA"); put(18, "ALA")
+            put(22, "A"); put(23, f"{serial:>4}")
+            put(31, f"{0.0:>8.3f}"); put(39, f"{0.0:>8.3f}"); put(47, f"{0.0:>8.3f}")
+            put(55, f"{1.0:>6.2f}"); put(61, f"{b:>6.2f}"); put(77, " C")
+            return "".join(line)
+
+        pdb = "\n".join(_ca(i, 40.0) for i in range(1, 6))  # all low confidence
+        with mock.patch.object(server.alphafold, "fetch_models", return_value=models), \
+             mock.patch.object(server.alphafold, "fetch_model_pdb", return_value=pdb):
+            resp, out = self._get("/api/model_confidence?acc=P00519")
+        self.assertEqual(resp.status, 200)
+        self.assertTrue(out["available"])
+        self.assertFalse(out["confidence"]["docking_suitable"])
+        self.assertTrue(out["confidence"]["low_confidence_regions"])
+
+    def test_model_confidence_absent(self):
+        with mock.patch.object(server.alphafold, "fetch_models", return_value=[]):
+            resp, out = self._get("/api/model_confidence?acc=NOPE99")
+        self.assertEqual(resp.status, 200)
+        self.assertFalse(out["available"])
+
 
 if __name__ == "__main__":
     unittest.main()

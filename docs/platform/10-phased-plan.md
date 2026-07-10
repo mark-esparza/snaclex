@@ -24,15 +24,21 @@ has a working slice; Phases 2–4 are specified, not built.
 | Report endpoints | 🟢 shipped | `server.py` new routes; `apidocs.py` |
 | Report UI (13 tabs) | 🟡 API-complete, minimal UI | `web/` (Phase 1.5) |
 
-## Phase 2 — Predicted structures & functional annotation
+## Phase 2 — Predicted structures & functional annotation  *(in progress)*
 
-- AlphaFold **confidence-aware** structure handling (per-region pLDDT gating of
-  docking); PAE ingestion. *(adapter shipped; gating logic scaffolded.)*
-- InterPro domains adapter; richer sequence features; conservation reuse of the
-  existing `evolution.py`.
-- Homology-based structure selection (Level D transfer + RCSB sequence search).
-- Predicted-pocket analysis **with warnings** (reuse `pockets.py` on AF models,
-  confidence-annotated).
+| Item | Status | Where |
+|---|---|---|
+| AlphaFold confidence-aware handling (real per-residue pLDDT → bands, low-confidence/disordered regions, docking gate) | 🟢 shipped | `alphafold.build_confidence`; `GET /api/model_confidence` |
+| InterPro domains adapter (optional, env-gated, provenance-stamped) | 🟢 shipped | `interpro.py`; `GET /api/domains` |
+| Conservation (Pfam) reuse | 🟢 existing | `evolution.py`; `GET /api/evolution` |
+| PAE ingestion (image/doc URL surfaced; numeric PAE parse) | 🟡 URLs surfaced; numeric parse pending | `alphafold.parse_prediction` |
+| Homology-based structure selection (Level D transfer + RCSB sequence search) | 🔲 specified | — |
+| Predicted-pocket analysis **with warnings** (run `pockets.py` on AF models, confidence-annotated) | 🔲 specified | reuse `pockets.py` |
+
+The confidence gate deliberately keeps model download **out** of the lightweight
+`structure_availability` path (NFR-4); `/api/model_confidence` fetches the model
+coordinates on demand and drives the docking gate from measured pLDDT, so a
+low-confidence model is never marked dockable.
 
 ## Phase 3 — Research workspaces
 
