@@ -46,6 +46,15 @@ All notable changes to SnaCleX are documented here. This project adheres to
   and domains are kept **separate** from curated UniProt domains, each
   source-labelled. New `GET /api/domains?acc=...`.
 - +10 offline tests (InterPro parse/gating, confidence gate, both endpoints).
+- **Homology-based structure selection** — `rcsb.sequence_search` (RCSB mmseqs2)
+  + `homology.py` find structurally-characterized homologs when a protein has no
+  direct structure. The Stage-4 hierarchy now ranks **experimental → homologous
+  experimental → predicted → sequence-only**; a homolog is only offered as a
+  docking receptor above a 0.40 identity floor and always carries a "not the
+  requested protein" caveat. New `GET /api/homologs?acc=...` and
+  `GET /api/protein?...&homologs=1`. The evidence endpoint surfaces Level-D
+  homolog *candidates* (`?homologs=1`) without asserting a "binds" claim. +13
+  offline tests.
 
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout

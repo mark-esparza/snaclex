@@ -181,6 +181,61 @@ def parse_polymer_entity_search(data: dict) -> list[dict]:
     return out
 
 
+def sequence_search(sequence: str, *, identity_cutoff: float = 0.3,
+                    evalue_cutoff: float = 1.0, limit: int = 25) -> list[dict]:
+    """Find PDB polymer entities similar to a sequence (RCSB mmseqs2 search).
+
+    Powers homology-based structure selection: when a protein has no direct
+    experimental structure, its structurally-characterized homologs are found
+    here with per-hit sequence identity. Returns
+    ``[{pdb_id, entity, identity, evalue}]`` (identity is a 0-1 fraction).
+
+    VERIFY: the match-context fields (``sequence_identity``, ``evalue``) follow
+    the current RCSB sequence-service schema and need a live round-trip.
+    """
+    import json
+    import urllib.parse
+
+    seq = "".join((sequence or "").split()).upper()
+    if len(seq) < 20:  # RCSB rejects very short sequence queries
+        return []
+    payload = {
+        "query": {"type": "terminal", "service": "sequence", "parameters": {
+            "evalue_cutoff": evalue_cutoff, "identity_cutoff": identity_cutoff,
+            "sequence_type": "protein", "value": seq}},
+        "return_type": "polymer_entity",
+        "request_options": {"scoring_strategy": "sequence",
+                            "paginate": {"start": 0, "rows": limit}},
+    }
+    url = ("https://search.rcsb.org/rcsbsearch/v2/query?json="
+           + urllib.parse.quote(json.dumps(payload)))
+    try:
+        data = fetch_json(url)
+    except FetchError:
+        return []
+    return parse_sequence_search(data)
+
+
+def parse_sequence_search(data: dict) -> list[dict]:
+    """Parse a sequence-search result, pulling per-hit identity + e-value."""
+    out: list[dict] = []
+    for item in (data or {}).get("result_set", []):
+        ident = item.get("identifier") or ""
+        pdb_id, _, entity = ident.partition("_")
+        identity = evalue = None
+        for svc in item.get("services", []):
+            for node in svc.get("nodes", []):
+                for mc in node.get("match_context", []):
+                    if mc.get("sequence_identity") is not None:
+                        identity = mc["sequence_identity"]
+                    if mc.get("evalue") is not None:
+                        evalue = mc["evalue"]
+        if pdb_id:
+            out.append({"pdb_id": pdb_id.upper(), "entity": entity or None,
+                        "identity": identity, "evalue": evalue})
+    return out
+
+
 def fetch_entry_summaries(ids: list[str]) -> dict:
     """Batch-fetch {pdb_id: {title, organism}} for several entries at once."""
     if not ids:

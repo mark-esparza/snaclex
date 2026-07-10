@@ -194,6 +194,42 @@ class TestPlatformEndpoints(unittest.TestCase):
         self.assertEqual(resp.status, 200)
         self.assertFalse(out["available"])
 
+    def test_homologs_endpoint(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["sequence"]["value"] = "A" * 40
+        homo = {"available": True, "method": {"identity_cutoff": 0.3},
+                "structures": [{"pdb_id": "2GQG", "sequence_identity": 0.62,
+                                "docking_suitable": True}]}
+        with mock.patch.object(server.idresolve, "resolve", return_value=res), \
+             mock.patch.object(server.homology, "find_homologous_structures",
+                               return_value=homo):
+            resp, out = self._get("/api/homologs?acc=P00519")
+        self.assertEqual(resp.status, 200)
+        self.assertTrue(out["available"])
+        self.assertEqual(out["structures"][0]["pdb_id"], "2GQG")
+
+    def test_evidence_level_d_candidates_opt_in(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["sequence"]["value"] = "A" * 40
+        homo = {"available": True, "method": {},
+                "structures": [{"pdb_id": "2GQG", "sequence_identity": 0.62}]}
+        with mock.patch.object(server.idresolve, "resolve", return_value=res), \
+             mock.patch.object(server.pubchem, "lookup_compound", return_value={"cid": 5291}), \
+             mock.patch.object(server.pubchem, "fetch_identity",
+                               return_value={"cid": 5291, "inchikey": "X"}), \
+             mock.patch.object(server.pubchem, "fetch_parent_cid", return_value=None), \
+             mock.patch.object(server.pubchem, "bioassay_summary", return_value=[]), \
+             mock.patch.object(server.proteinrecord, "structure_availability",
+                               return_value={"tier": "homologous", "best_for_docking": "2GQG"}), \
+             mock.patch.object(server.homology, "find_homologous_structures",
+                               return_value=homo):
+            resp, out = self._get("/api/evidence?protein=P00519&chemical=imatinib&homologs=1")
+        self.assertEqual(resp.status, 200)
+        self.assertIsNotNone(out["level_d_candidates"])
+        self.assertEqual(out["level_d_candidates"]["structural_homologs"][0]["pdb_id"], "2GQG")
+        # A Level-D "binds" claim is NOT asserted — only candidates are surfaced.
+        self.assertNotIn("D", out["levels_not_gathered_in_slice"])
+
 
 if __name__ == "__main__":
     unittest.main()

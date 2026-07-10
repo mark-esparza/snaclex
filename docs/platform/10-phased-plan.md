@@ -32,8 +32,15 @@ has a working slice; Phases 2–4 are specified, not built.
 | InterPro domains adapter (optional, env-gated, provenance-stamped) | 🟢 shipped | `interpro.py`; `GET /api/domains` |
 | Conservation (Pfam) reuse | 🟢 existing | `evolution.py`; `GET /api/evolution` |
 | PAE ingestion (image/doc URL surfaced; numeric PAE parse) | 🟡 URLs surfaced; numeric parse pending | `alphafold.parse_prediction` |
-| Homology-based structure selection (Level D transfer + RCSB sequence search) | 🔲 specified | — |
+| Homology-based structure selection (RCSB sequence search → homologous tier) | 🟢 shipped | `homology.py`; `rcsb.sequence_search`; `GET /api/homologs`; `?homologs=1` |
+| Level D transfer surfacing (homolog candidates, no over-claim) | 🟢 shipped | `evidence.level_d_transfer`; `/api/evidence?...&homologs=1` |
 | Predicted-pocket analysis **with warnings** (run `pockets.py` on AF models, confidence-annotated) | 🔲 specified | reuse `pockets.py` |
+
+Stage-4 hierarchy now honors the task's ordering: **experimental → homologous
+experimental → predicted → sequence-only**. A homolog is only offered as a
+docking receptor above a sequence-identity floor (≥0.40) and always with a "not
+the requested protein" caveat; Level-D evidence surfaces homolog *candidates*
+without asserting a "binds" claim until a per-entry ligand match confirms it.
 
 The confidence gate deliberately keeps model download **out** of the lightweight
 `structure_availability` path (NFR-4); `/api/model_confidence` fetches the model

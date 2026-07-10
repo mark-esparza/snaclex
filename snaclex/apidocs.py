@@ -95,6 +95,14 @@ _ENDPOINTS = [
                    "sequence-only; with warnings. Predicted never shown as experimental.",
     },
     {
+        "method": "GET", "path": "/api/homologs",
+        "params": {"acc": "protein identifier (required)"},
+        "returns": "structurally-characterized homologs via RCSB sequence search, "
+                   "each with sequence identity and a docking caveat. Homologous "
+                   "experimental structures rank above predicted models. Also "
+                   "reachable via GET /api/protein?...&homologs=1.",
+    },
+    {
         "method": "GET", "path": "/api/domains",
         "params": {"acc": "protein identifier (required)"},
         "returns": "curated (UniProt) domains + optional InterPro families/domains "

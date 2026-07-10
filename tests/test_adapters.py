@@ -229,6 +229,22 @@ class TestRcsbSearch(unittest.TestCase):
         self.assertEqual(out[0]["entity"], "1")
         self.assertEqual({o["pdb_id"] for o in out}, {"1IEP", "2HYY"})
 
+    def test_parse_sequence_search(self):
+        data = {"result_set": [
+            {"identifier": "2GQG_1", "services": [{"nodes": [{"match_context": [
+                {"sequence_identity": 0.62, "evalue": 1e-40}]}]}]},
+            {"identifier": "3XYZ_1", "services": [{"nodes": [{"match_context": [
+                {"sequence_identity": 0.25, "evalue": 0.1}]}]}]},
+        ]}
+        out = rcsb.parse_sequence_search(data)
+        self.assertEqual(out[0]["pdb_id"], "2GQG")
+        self.assertEqual(out[0]["identity"], 0.62)
+        self.assertAlmostEqual(out[0]["evalue"], 1e-40)
+
+    def test_sequence_search_rejects_short(self):
+        # No network call for a too-short sequence.
+        self.assertEqual(rcsb.sequence_search("ACDEFG"), [])
+
 
 # --- PubChem BioAssay parse -------------------------------------------------
 class TestPubchemAssay(unittest.TestCase):

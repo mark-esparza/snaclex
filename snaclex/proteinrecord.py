@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import datetime
 
-from . import __version__, alphafold, checksum, rcsb, seqanalysis
+from . import __version__, alphafold, checksum, homology, rcsb, seqanalysis
 from .http_util import FetchError
 
 
@@ -130,16 +130,20 @@ def build_record(resolution: dict, *, ph: float = 7.0) -> dict:
     return record
 
 
-def structure_availability(accession: str, *, sequence_length=None) -> dict:
-    """Stage 4: experimental (PDB) → predicted (AlphaFold) → sequence-only.
+def structure_availability(accession: str, *, sequence=None,
+                           include_homologs: bool = False) -> dict:
+    """Stage 4 hierarchy: experimental → homologous → predicted → sequence-only.
 
     Network-touching. Reports coverage/confidence and a docking-suitability gate;
-    never auto-marks a low-confidence predicted model as dockable.
+    never auto-marks a low-confidence predicted model (or a distant homolog) as a
+    reliable receptor. Homolog search is opt-in (``include_homologs`` + a
+    ``sequence``) so the default availability check stays lightweight (NFR-4).
     """
-    result = {"experimental": [], "predicted": [], "tier": "sequence_only",
-              "best_for_docking": None, "assessed": True, "warnings": []}
+    result = {"experimental": [], "homologous": [], "predicted": [],
+              "tier": "sequence_only", "best_for_docking": None,
+              "assessed": True, "warnings": []}
 
-    # 1. Experimental structures via RCSB by-UniProt search.
+    # 1. Direct experimental structures via RCSB by-UniProt search.
     try:
         entities = rcsb.search_by_uniprot(accession)
     except FetchError as exc:
@@ -157,11 +161,19 @@ def structure_availability(accession: str, *, sequence_length=None) -> dict:
             "provenance": {"source": "RCSB PDB", "source_id": pid,
                            "retrieved_utc": _now(), "evidence_category": "experimental"},
         })
-    if result["experimental"]:
-        result["tier"] = "experimental"
-        result["best_for_docking"] = result["experimental"][0]["pdb_id"]
 
-    # 2. Predicted structures via AlphaFold DB.
+    # 2. Homologous experimental structures (only when no direct structure and
+    #    a sequence is available to search with).
+    if include_homologs and sequence and not result["experimental"]:
+        homo = homology.find_homologous_structures(
+            sequence, direct_pdb_ids=[e["pdb_id"] for e in result["experimental"]])
+        result["homologous"] = homo.get("structures", [])
+        result["homology_method"] = homo.get("method")
+        if not homo.get("available"):
+            result["warnings"].append(
+                f"homolog search unavailable: {homo.get('reason')}")
+
+    # 3. Predicted structures via AlphaFold DB (metadata only — cheap).
     try:
         models = alphafold.fetch_models(accession)
     except FetchError as exc:
@@ -169,13 +181,27 @@ def structure_availability(accession: str, *, sequence_length=None) -> dict:
         result["warnings"].append(f"AlphaFold unavailable: {exc}")
     for m in models:
         model = m["data"]
-        assessment = alphafold.docking_assessment(model)
-        model.update(assessment)
+        model.update(alphafold.docking_assessment(model))
         model["provenance"] = m["provenance"]
         result["predicted"].append(model)
-    if not result["experimental"] and result["predicted"]:
+
+    # 4. Decide the tier (experimental > homologous > predicted > sequence-only).
+    if result["experimental"]:
+        result["tier"] = "experimental"
+        result["best_for_docking"] = result["experimental"][0]["pdb_id"]
+    elif result["homologous"]:
+        result["tier"] = "homologous"
+        dockable = next((h for h in result["homologous"] if h.get("docking_suitable")), None)
+        if dockable:
+            result["best_for_docking"] = dockable["pdb_id"]
+            result["warnings"].append(
+                "best available receptor is a HOMOLOG, not the requested protein — "
+                "binding-site transfer requires caution")
+        else:
+            result["warnings"].append(
+                "only distant homolog structures found — docking not offered")
+    elif result["predicted"]:
         result["tier"] = "predicted"
-        # Only offer docking on a confident predicted model.
         confident = next((m for m in result["predicted"] if m.get("docking_suitable")), None)
         if confident:
             result["best_for_docking"] = confident["model_id"]
@@ -183,10 +209,9 @@ def structure_availability(accession: str, *, sequence_length=None) -> dict:
             result["warnings"].append(
                 "predicted model available but low confidence — docking not offered; "
                 "sequence-only analysis remains available")
-
-    if result["tier"] == "sequence_only":
+    else:
         result["warnings"].append(
-            "no experimental or predicted structure — sequence-only analysis")
+            "no experimental, homologous, or predicted structure — sequence-only analysis")
     return result
 
 

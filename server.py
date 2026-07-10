@@ -36,6 +36,7 @@ from snaclex import (
     alphafold,
     evidence,
     evolution,
+    homology,
     idresolve,
     interactions,
     interpro,
@@ -855,6 +856,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_sequence_analysis(qs)
         if path == "/api/structure_availability":
             return self._api_structure_availability(qs)
+        if path == "/api/homologs":
+            return self._api_homologs(qs)
         if path == "/api/domains":
             return self._api_domains(qs)
         if path == "/api/model_confidence":
@@ -1138,6 +1141,10 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             return 7.0
 
+    @staticmethod
+    def _truthy(qs, key):
+        return (qs.get(key) or [""])[0].strip().lower() in ("1", "true", "on", "yes")
+
     def _api_resolve(self, qs):
         query = clean_text((qs.get("q") or [""])[0])
         if not query:
@@ -1153,7 +1160,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(result)
 
     def _build_protein(self, query, *, taxon=None, accession=None, ph=7.0,
-                       with_structures=True):
+                       with_structures=True, include_homologs=False):
         resolution = idresolve.resolve(query, taxon=taxon, accession=accession)
         if resolution.get("is_chemical"):
             return None, "Input looks like a chemical — use /api/chemical."
@@ -1165,9 +1172,9 @@ class Handler(BaseHTTPRequestHandler):
         record = proteinrecord.build_record(resolution, ph=ph)
         acc = record["accessions"].get("uniprot_primary")
         if with_structures and acc:
-            seq_len = (record.get("sequence") or {}).get("length")
+            seq = (record.get("sequence") or {}).get("value")
             availability = proteinrecord.structure_availability(
-                acc, sequence_length=seq_len)
+                acc, sequence=seq, include_homologs=include_homologs)
             proteinrecord.attach_structures(record, availability)
         else:
             record["structures"]["tier"] = "sequence_only"
@@ -1179,7 +1186,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_error_json("Missing 'q' parameter")
         record, err = self._build_protein(
             query, taxon=(qs.get("taxon") or [None])[0],
-            accession=(qs.get("accession") or [None])[0], ph=self._parse_ph(qs))
+            accession=(qs.get("accession") or [None])[0], ph=self._parse_ph(qs),
+            include_homologs=self._truthy(qs, "homologs"))
         if err:
             return self._send_error_json(err)
         return self._send_json(record)
@@ -1204,6 +1212,21 @@ class Handler(BaseHTTPRequestHandler):
         if not acc:
             return self._send_error_json("Missing 'acc' parameter")
         return self._send_json(proteinrecord.structure_availability(acc))
+
+    def _api_homologs(self, qs):
+        query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'acc' parameter")
+        resolution = idresolve.resolve(query)
+        up = resolution.get("_uniprot_fragment") or {}
+        seq = (up.get("sequence") or {}).get("value") or resolution.get("sequence")
+        if not seq:
+            return self._send_json({"available": False,
+                                    "reason": "no sequence resolved for this query",
+                                    "structures": []})
+        direct = [e["id"] for e in (up.get("cross_references") or {}).get("PDB", [])]
+        return self._send_json(
+            homology.find_homologous_structures(seq, direct_pdb_ids=direct))
 
     def _api_domains(self, qs):
         query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
@@ -1302,6 +1325,34 @@ class Handler(BaseHTTPRequestHandler):
         availability = proteinrecord.structure_availability(acc) if acc else {
             "tier": "sequence_only", "best_for_docking": None}
 
+        # Level D — structural homologs (opt-in). We surface homologs honestly as
+        # *candidates*: confirming the compound actually binds one requires a
+        # per-entry ligand→PubChem match, so no "binds" claim is asserted here.
+        level_d = None
+        not_gathered_d = "homology transfer — pass ?homologs=1 to list candidates"
+        if self._truthy(qs, "homologs"):
+            seq = (up.get("sequence") or {}).get("value")
+            if seq:
+                homo = homology.find_homologous_structures(
+                    seq, direct_pdb_ids=[e["id"] for e in
+                                         (up.get("cross_references") or {}).get("PDB", [])])
+                level_d = {
+                    "structural_homologs": homo.get("structures", []),
+                    "note": ("Structural homologs of the protein. Level D evidence "
+                             "would require confirming the compound is bound in one "
+                             "of these homolog structures (per-entry ligand→PubChem "
+                             "match) — not asserted here, to avoid overclaiming."),
+                }
+                not_gathered_d = None
+
+        not_gathered = {
+            "A": "requires per-PDB-entry ligand→PubChem mapping (Phase 1 follow-up)",
+            "C": "curated association sources are Phase 3",
+            "F": "ML/similarity prediction is Phase 4",
+        }
+        if not_gathered_d:
+            not_gathered["D"] = not_gathered_d
+
         return self._send_json({
             "protein": {"query": protein_q, "accession": acc,
                         "ref": protein_ref["ref"], "gene_ids": gene_ids},
@@ -1310,6 +1361,7 @@ class Handler(BaseHTTPRequestHandler):
                          "parent_cid": identity.get("parent_cid")},
             "evidence": evidence.rank(gathered),
             "summary": evidence.summarize(gathered),
+            "level_d_candidates": level_d,
             "docking": {
                 "available": bool(availability.get("best_for_docking")),
                 "structure": availability.get("best_for_docking"),
@@ -1319,12 +1371,7 @@ class Handler(BaseHTTPRequestHandler):
                          "(lower=better), NOT a binding affinity, and is never "
                          "merged with Level A/B evidence."),
             },
-            "levels_not_gathered_in_slice": {
-                "A": "requires per-PDB-entry ligand→PubChem mapping (Phase 1 follow-up)",
-                "C": "curated association sources are Phase 3",
-                "D": "homology transfer is Phase 2",
-                "F": "ML/similarity prediction is Phase 4",
-            },
+            "levels_not_gathered_in_slice": not_gathered,
             "notes": [b_note,
                       "Evidence levels are never merged; see /api/docs and "
                       "docs/platform/06-evidence-ranking.md"],
