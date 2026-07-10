@@ -56,6 +56,18 @@ All notable changes to SnaCleX are documented here. This project adheres to
   homolog *candidates* (`?homologs=1`) without asserting a "binds" claim. +13
   offline tests.
 
+### Genetics / variant workspace (Phase 3 — started)
+- **Variant analysis** (`variants.py`, `GET /api/variant`) — parse `BRAF V600E`,
+  `TP53 R175H`, or HGVS `P15056:p.Val600Glu` and map to a residue: sequence-
+  coordinate mapping with a **WT-residue validation** that catches wrong-isoform
+  / off-by-one numbering, coding consequence (missense/nonsense/synonymous),
+  domain-disruption context, overlap with curated residue annotations, and any
+  matching known natural variant. Clinical interpretation is shown **with its
+  source, the record's review status, and explicit limitations — never a
+  diagnosis, prognosis, or recommendation**. Frameshift/splice/start-loss and
+  population frequency are flagged as needing transcript-level (Ensembl/VEP) and
+  authorized (ClinVar) sources. +18 offline tests.
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,

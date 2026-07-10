@@ -117,6 +117,15 @@ _ENDPOINTS = [
                    "a docking gate (low-confidence models are not marked dockable).",
     },
     {
+        "method": "GET", "path": "/api/variant",
+        "params": {"q": "variant, e.g. 'BRAF V600E' / 'TP53 R175H' / 'P15056:p.Val600Glu' (required)"},
+        "returns": "residue-level variant analysis: sequence-coordinate mapping "
+                   "with WT-residue validation, coding consequence, domain "
+                   "disruption, curated-annotation overlap, known-variant match, "
+                   "and clinical interpretation shown WITH evidence + review status "
+                   "and limitations — never a clinical recommendation.",
+    },
+    {
         "method": "GET", "path": "/api/evidence",
         "params": {"protein": "protein identifier (required)",
                    "chemical": "chemical name/CID/InChIKey (required)"},

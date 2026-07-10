@@ -202,6 +202,7 @@ snaclex/
   idresolve.py         query interpretation + xref graph (Stage 1/2)
   proteinrecord.py     unified ProteinRecord + structure availability
   evidence.py          universal evidence object + A–F levels
+  variants.py          variant parsing + residue-level analysis (Genetics)
 web/
   index.html style.css app.js
 docs/platform/         sequence-first platform design set (PRD, architecture, …)
@@ -228,6 +229,7 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/domains?acc=...` | curated (UniProt) + optional InterPro domains, source-labelled |
 | `GET /api/model_confidence?acc=...` | AlphaFold per-residue pLDDT bands + docking gate |
 | `GET /api/evidence?protein=...&chemical=...` | typed A–F protein–chemical evidence (never merged) |
+| `GET /api/variant?q=BRAF V600E` | residue-level variant mapping + consequence + clinical evidence (no clinical call) |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
 | `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |
 | `POST /api/upload` | analyze a user-supplied PDB or mmCIF file (returns an upload id usable as `ID` above) |

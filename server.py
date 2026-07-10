@@ -49,6 +49,7 @@ from snaclex import (
     rcsb,
     report,
     seqanalysis,
+    variants,
 )
 from snaclex.http_util import FetchError
 
@@ -864,6 +865,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_model_confidence(qs)
         if path == "/api/evidence":
             return self._api_evidence(qs)
+        if path == "/api/variant":
+            return self._api_variant(qs)
         if path == "/api/version":
             return self._api_version(qs)
         if path == "/api/docs":
@@ -1375,6 +1378,34 @@ class Handler(BaseHTTPRequestHandler):
             "notes": [b_note,
                       "Evidence levels are never merged; see /api/docs and "
                       "docs/platform/06-evidence-ranking.md"],
+        })
+
+    def _api_variant(self, qs):
+        query = clean_text((qs.get("q") or qs.get("variant") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'q' parameter")
+        try:
+            parsed = variants.parse(query)
+        except variants.VariantError as exc:
+            return self._send_error_json(str(exc))
+        record, err = self._build_protein(parsed["gene_or_acc"], with_structures=True)
+        if err:
+            return self._send_error_json(err)
+        if record.get("needs_disambiguation"):
+            return self._send_json({"needs_disambiguation": True,
+                                    "variant": parsed,
+                                    "candidates": record.get("candidates", [])})
+        analysis = variants.analyze(record, parsed)
+        return self._send_json({
+            "variant": parsed,
+            "protein": {
+                "canonical_id": record.get("canonical_id"),
+                "accession": record["accessions"].get("uniprot_primary"),
+                "gene": (record.get("gene") or {}).get("symbol"),
+                "organism": (record.get("organism") or {}).get("scientific_name"),
+                "review_status": record.get("review_status"),
+            },
+            "analysis": analysis,
         })
 
     def _api_version(self, qs):

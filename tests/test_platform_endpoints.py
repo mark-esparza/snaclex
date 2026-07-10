@@ -208,6 +208,32 @@ class TestPlatformEndpoints(unittest.TestCase):
         self.assertTrue(out["available"])
         self.assertEqual(out["structures"][0]["pdb_id"], "2GQG")
 
+    def test_variant_maps_residue(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["sequence"]["value"] = "MDLSAKLICE"
+        res["_uniprot_fragment"]["domains_motifs"] = [
+            {"name": "Kinase", "type": "domain", "start": 1, "end": 10}]
+        avail = {"experimental": [{"pdb_id": "1ABC"}], "homologous": [],
+                 "predicted": [], "tier": "experimental",
+                 "best_for_docking": "1ABC", "warnings": []}
+        with mock.patch.object(server.idresolve, "resolve", return_value=res), \
+             mock.patch.object(server.proteinrecord, "structure_availability",
+                               return_value=avail):
+            resp, out = self._get("/api/variant?q=GENE+K6R")
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(out["variant"]["notation"], "K6R")
+        self.assertTrue(out["analysis"]["sequence_mapping"]["wt_matches"])
+        self.assertTrue(out["analysis"]["domain_disruption"])
+        self.assertEqual(out["analysis"]["consequence"], "missense")
+        self.assertIn("Not a clinical interpretation",
+                      out["analysis"]["clinical"]["disclaimer"])
+        self.assertEqual(out["analysis"]["structure_mapping"]["experimental_structures"],
+                         ["1ABC"])
+
+    def test_variant_bad_input_400(self):
+        resp, out = self._get("/api/variant?q=not+a+variant")
+        self.assertEqual(resp.status, 400)
+
     def test_evidence_level_d_candidates_opt_in(self):
         res = _resolution_with_uniprot()
         res["_uniprot_fragment"]["sequence"]["value"] = "A" * 40
