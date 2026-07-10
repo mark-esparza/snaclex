@@ -9,12 +9,27 @@ upstream call — matching tests/test_server_integration.py conventions.
 import http.client
 import json
 import threading
+import time
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest import mock
 
 import server
 from snaclex import uniprot
+
+
+def _fake_record(acc, gene, taxon, organism, length):
+    return {
+        "canonical_id": f"SNX:PRT:{taxon}:{acc}:1",
+        "accessions": {"uniprot_primary": acc},
+        "preferred_name": f"{gene} protein", "gene": {"symbol": gene},
+        "organism": {"scientific_name": organism, "taxon_id": taxon},
+        "review_status": "reviewed", "sequence": {"length": length},
+        "sequence_analysis": {"length": length, "molecular_weight_Da": length * 110.0,
+                              "isoelectric_point": 6.5, "gravy": -0.2},
+        "domains_motifs": [{"name": "Protein kinase"}], "variants": [],
+        "structures": {"tier": "experimental"},
+    }
 
 _ENTRY = {
     "primaryAccession": "P00519", "uniProtkbId": "ABL1_HUMAN",
@@ -61,6 +76,23 @@ class TestPlatformEndpoints(unittest.TestCase):
         body = resp.read()
         conn.close()
         return resp, json.loads(body)
+
+    def _post(self, path, payload):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("POST", path, body=json.dumps(payload),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        return resp, json.loads(body)
+
+    def _poll(self, job_id, tries=100):
+        for _ in range(tries):
+            resp, out = self._get(f"/api/jobs/{job_id}")
+            if out.get("status") in ("done", "error"):
+                return out
+            time.sleep(0.02)
+        return out
 
     def test_protein_experimental_structure(self):
         avail = {"experimental": [{"pdb_id": "1IEP", "kind": "experimental",
@@ -142,6 +174,40 @@ class TestPlatformEndpoints(unittest.TestCase):
 
     def test_evidence_requires_both_params(self):
         resp, out = self._get("/api/evidence?protein=P00519")
+        self.assertEqual(resp.status, 400)
+
+    def test_run_batch_job_direct(self):
+        recs = {
+            "P00519": _fake_record("P00519", "ABL1", 9606, "Homo sapiens", 1130),
+            "P00520": _fake_record("P00520", "ABL1", 10090, "Mus musculus", 1123),
+        }
+
+        def fake_build(q, **kw):
+            return (recs[q], None) if q in recs else (None, "not found")
+
+        with mock.patch.object(server, "build_protein_record", side_effect=fake_build):
+            out = server.run_batch_job(
+                {"queries": ["P00519", "P00520", "NOPE"], "compare": True})
+        self.assertEqual(out["n_requested"], 3)
+        self.assertEqual(out["n_resolved"], 2)
+        self.assertEqual(len(out["errors"]), 1)
+        self.assertIn("ABL1", out["comparison"]["orthology"]["ortholog_candidates"])
+
+    def test_batch_endpoint_submits_and_completes(self):
+        rec = _fake_record("P00519", "ABL1", 9606, "Homo sapiens", 1130)
+        with mock.patch.object(server, "build_protein_record",
+                               return_value=(rec, None)):
+            resp, out = self._post("/api/protein/batch",
+                                   {"queries": ["P00519"], "compare": True})
+            self.assertEqual(resp.status, 202)
+            job_id = out["job_id"]
+            result = self._poll(job_id)
+        self.assertEqual(result["status"], "done")
+        self.assertEqual(result["result"]["n_resolved"], 1)
+        self.assertIn("comparison", result["result"])
+
+    def test_batch_endpoint_rejects_empty(self):
+        resp, out = self._post("/api/protein/batch", {"queries": []})
         self.assertEqual(resp.status, 400)
 
     def test_domains_separates_sources(self):

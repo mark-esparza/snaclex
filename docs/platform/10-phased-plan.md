@@ -64,12 +64,23 @@ curated interpretation *with its source and the record's review status*.
 Frameshift/splice/start-loss/stop-loss and population frequency are flagged as
 needing transcript-level (Ensembl/VEP) and authorized (ClinVar) sources.
 
-## Phase 4 — Advanced computation
+## Phase 4 — Advanced computation  *(started)*
 
-- Batch analysis, family/ortholog/WT-vs-mutant comparison, variant structural
-  analysis, chemical similarity & target comparison, optional Vina/GNINA docking
-  and optional on-demand prediction (ESMFold/ColabFold), knowledge-graph
-  exploration. All async, all opt-in.
+| Item | Status | Where |
+|---|---|---|
+| Batch analysis (async, bounded) over the shared record model | 🟢 shipped | `run_batch_job`; `POST /api/protein/batch` (job kind `batch`) |
+| Protein-family comparison (shared-domain signal) | 🟢 shipped | `compare.build_comparison` / `shared_domains` |
+| Ortholog / paralog **candidate** grouping (by gene symbol, never merged) | 🟢 shipped | `compare.orthology_groups` |
+| WT-vs-mutant comparison | 🟡 variant analysis exists (`variants.py`); dedicated diff view pending | — |
+| Chemical similarity & target comparison | 🔲 specified | — |
+| Optional Vina/GNINA docking; optional on-demand prediction (ESMFold/ColabFold) | 🔲 specified (env-gated) | — |
+| Knowledge-graph exploration | 🔲 specified (schema in [04](04-data-model.md)) | — |
+
+Batch reuses the existing async job queue (`jobs.py`) and the shared
+`build_protein_record` code path — the same builder the interactive `/api/protein`
+endpoint uses — so a list of proteins, a family, and a set of orthologs all run
+through one primitive. Comparison stays pure/offline-testable; orthology is a
+*candidate* grouping (gene symbol + differing taxa), explicitly not a merge.
 
 ## Vertical slice — what shipped (the required demonstration)
 

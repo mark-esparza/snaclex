@@ -56,6 +56,17 @@ All notable changes to SnaCleX are documented here. This project adheres to
   homolog *candidates* (`?homologs=1`) without asserting a "binds" claim. +13
   offline tests.
 
+### Batch & comparison (Phase 4 — started)
+- **Batch analysis** — `POST /api/protein/batch` resolves a list of protein
+  queries (≤25) through the existing async job queue (job kind `batch`), reusing
+  the same `build_protein_record` code path as the interactive endpoint. Per-item
+  failures are reported, not fatal; poll `GET /api/jobs/{id}`.
+- **Protein comparison** (`compare.py`) — family/ortholog view over the shared
+  ProteinRecord model: side-by-side metrics, shared-domain signal (in-all vs
+  in-some), and ortholog/paralog **candidate** grouping by gene symbol across
+  differing taxa — explicitly a candidate view, **never a merge** (per the
+  identity rules). +9 offline tests.
+
 ### Genetics / variant workspace (Phase 3 — started)
 - **Variant analysis** (`variants.py`, `GET /api/variant`) — parse `BRAF V600E`,
   `TP53 R175H`, or HGVS `P15056:p.Val600Glu` and map to a residue: sequence-

@@ -75,6 +75,17 @@ _ENDPOINTS = [
                    "{needs_disambiguation, candidates} when a name/gene is ambiguous.",
     },
     {
+        "method": "POST", "path": "/api/protein/batch",
+        "body": {"queries": "array of protein identifiers/FASTA (≤25)",
+                 "compare": "bool — include a family/ortholog comparison",
+                 "structures": "bool — include structure availability per item",
+                 "ph": "optional pH for net charge"},
+        "returns": "202 with {job_id}; poll GET /api/jobs/{id}. Result has "
+                   "per-item summaries, per-item errors, and (when compare) a "
+                   "comparison over the shared record model with shared-domain and "
+                   "ortholog/paralog *candidate* grouping (by gene symbol, not merged).",
+    },
+    {
         "method": "POST", "path": "/api/protein/sequence",
         "body": {"fasta": "raw FASTA or amino-acid sequence (required)",
                  "ph": "optional pH for net charge"},

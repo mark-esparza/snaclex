@@ -32,6 +32,7 @@ from snaclex import (
     apidocs,
     benchmark,
     chembl,
+    compare,
     docking,
     alphafold,
     evidence,
@@ -698,10 +699,83 @@ def run_benchmark_job(params: dict) -> dict:
     return result
 
 
+def build_protein_record(query, *, taxon=None, accession=None, ph=7.0,
+                         with_structures=True, include_homologs=False):
+    """Resolve a query and assemble a ProteinRecord (module-level so both the
+    HTTP handler and the batch job runner share one code path).
+
+    Returns ``(record, error)``; ``record`` may be a ``{needs_disambiguation}``
+    dict when a name/gene is ambiguous and no explicit pick was given.
+    """
+    resolution = idresolve.resolve(query, taxon=taxon, accession=accession)
+    if resolution.get("is_chemical"):
+        return None, "Input looks like a chemical — use /api/chemical."
+    if resolution.get("candidates") and not resolution.get("chosen"):
+        return {"needs_disambiguation": True,
+                "candidates": resolution["candidates"],
+                "warnings": resolution.get("warnings", [])}, None
+    record = proteinrecord.build_record(resolution, ph=ph)
+    acc = record["accessions"].get("uniprot_primary")
+    if with_structures and acc:
+        seq = (record.get("sequence") or {}).get("value")
+        availability = proteinrecord.structure_availability(
+            acc, sequence=seq, include_homologs=include_homologs)
+        proteinrecord.attach_structures(record, availability)
+    else:
+        record["structures"]["tier"] = "sequence_only"
+    return record, None
+
+
+MAX_BATCH_ITEMS = 25
+
+
+def run_batch_job(params: dict) -> dict:
+    """Resolve a list of protein queries and (optionally) compare them.
+
+    Runs in the async job queue so a large list does not block a request. Each
+    item is resolved independently; per-item failures are reported, not fatal.
+    """
+    queries = params.get("queries")
+    if not isinstance(queries, list) or not queries:
+        raise ValueError("Need a non-empty 'queries' list")
+    if len(queries) > MAX_BATCH_ITEMS:
+        raise ValueError(f"Batch too large (max {MAX_BATCH_ITEMS} items)")
+    with_structures = bool(params.get("structures", False))
+    try:
+        ph = float(params.get("ph", 7.0))
+    except (TypeError, ValueError):
+        ph = 7.0
+
+    records, results, errors = [], [], []
+    for raw in queries:
+        q = clean_text(str(raw))
+        if not q:
+            continue
+        try:
+            rec, err = build_protein_record(q, ph=ph, with_structures=with_structures)
+            if err:
+                errors.append({"query": q, "error": err})
+            elif rec.get("needs_disambiguation"):
+                errors.append({"query": q, "error": "ambiguous — multiple candidates",
+                               "candidates": rec.get("candidates")})
+            else:
+                records.append(rec)
+                results.append(compare.record_summary(rec))
+        except FetchError as exc:
+            errors.append({"query": q, "error": str(exc)})
+
+    out = {"n_requested": len(queries), "n_resolved": len(records),
+           "results": results, "errors": errors}
+    if params.get("compare"):
+        out["comparison"] = compare.build_comparison(records)
+    return out
+
+
 _JOB_RUNNERS = {
     "dock": run_dock_job,
     "screen": run_screen_job,
     "benchmark": run_benchmark_job,
+    "batch": run_batch_job,
 }
 
 
@@ -893,7 +967,8 @@ class Handler(BaseHTTPRequestHandler):
             self._access_log("POST", path)
 
     def _dispatch_post(self, path):
-        if path not in ("/api/jobs", "/api/upload", "/api/protein/sequence"):
+        if path not in ("/api/jobs", "/api/upload", "/api/protein/sequence",
+                        "/api/protein/batch"):
             return self._send_error_json("Not found", status=404)
 
         ip = self._client_ip()
@@ -913,6 +988,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guarded_upload()
         if path == "/api/protein/sequence":
             return self._api_protein_sequence()
+        if path == "/api/protein/batch":
+            return self._api_protein_batch()
 
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > 8192:
@@ -956,6 +1033,30 @@ class Handler(BaseHTTPRequestHandler):
         if err:
             return self._send_error_json(err)
         return self._send_json(record)
+
+    def _api_protein_batch(self):
+        """POST {queries:[...], compare?, structures?, ph?} → async batch job."""
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > 20_000:
+            return self._send_error_json("Missing or oversized request body")
+        try:
+            payload = json.loads(self.rfile.read(length))
+        except (ValueError, OSError):
+            return self._send_error_json("Invalid JSON body")
+        if not isinstance(payload, dict):
+            return self._send_error_json("Body must be a JSON object")
+        queries = payload.get("queries")
+        if not isinstance(queries, list) or not queries:
+            return self._send_error_json("Provide a non-empty 'queries' array")
+        if len(queries) > MAX_BATCH_ITEMS:
+            return self._send_error_json(
+                f"Batch too large (max {MAX_BATCH_ITEMS} items)")
+        params = {"queries": queries, "compare": bool(payload.get("compare")),
+                  "structures": bool(payload.get("structures")),
+                  "ph": payload.get("ph", 7.0)}
+        job_id = JOBS.submit(run_batch_job, params)
+        return self._send_json({"job_id": job_id, "status": "queued",
+                                "poll": f"/api/jobs/{job_id}"}, status=202)
 
     def _guarded_upload(self):
         try:
@@ -1164,24 +1265,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _build_protein(self, query, *, taxon=None, accession=None, ph=7.0,
                        with_structures=True, include_homologs=False):
-        resolution = idresolve.resolve(query, taxon=taxon, accession=accession)
-        if resolution.get("is_chemical"):
-            return None, "Input looks like a chemical — use /api/chemical."
-        # Ambiguous name/gene with no explicit pick: return candidates for the UI.
-        if resolution.get("candidates") and not resolution.get("chosen"):
-            return {"needs_disambiguation": True,
-                    "candidates": resolution["candidates"],
-                    "warnings": resolution.get("warnings", [])}, None
-        record = proteinrecord.build_record(resolution, ph=ph)
-        acc = record["accessions"].get("uniprot_primary")
-        if with_structures and acc:
-            seq = (record.get("sequence") or {}).get("value")
-            availability = proteinrecord.structure_availability(
-                acc, sequence=seq, include_homologs=include_homologs)
-            proteinrecord.attach_structures(record, availability)
-        else:
-            record["structures"]["tier"] = "sequence_only"
-        return record, None
+        # Delegates to the module-level builder shared with the batch job runner.
+        return build_protein_record(
+            query, taxon=taxon, accession=accession, ph=ph,
+            with_structures=with_structures, include_homologs=include_homologs)
 
     def _api_protein(self, qs):
         query = clean_text((qs.get("q") or [""])[0])

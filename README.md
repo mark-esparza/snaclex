@@ -203,6 +203,7 @@ snaclex/
   proteinrecord.py     unified ProteinRecord + structure availability
   evidence.py          universal evidence object + A–F levels
   variants.py          variant parsing + residue-level analysis (Genetics)
+  compare.py           batch protein comparison (family / ortholog views)
 web/
   index.html style.css app.js
 docs/platform/         sequence-first platform design set (PRD, architecture, …)
@@ -223,6 +224,7 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/resolve?q=...` | query interpretation + cross-reference graph (Stage 1/2) |
 | `GET /api/protein?q=...` | unified sequence-first ProteinRecord (+ structure availability) |
 | `POST /api/protein/sequence` | build a ProteinRecord from raw FASTA |
+| `POST /api/protein/batch` | async batch analysis + family/ortholog comparison (poll `/api/jobs/{id}`) |
 | `GET /api/sequence_analysis?acc=...` | calculated MW/pI/charge/GRAVY/composition |
 | `GET /api/structure_availability?acc=...` | experimental → homologous → AlphaFold → sequence-only hierarchy |
 | `GET /api/homologs?acc=...` | structurally-characterized homologs (RCSB sequence search) + identity |
