@@ -67,6 +67,21 @@ All notable changes to SnaCleX are documented here. This project adheres to
   differing taxa — explicitly a candidate view, **never a merge** (per the
   identity rules). +9 offline tests.
 
+### Research-domain workspace lenses (Phase 3)
+- **Immunology / Oncology / Genetics lenses** (`workspaces.py`,
+  `GET /api/workspace?view=...`) — research-domain *views* over the same
+  ProteinRecord, grounded first in **curated UniProt keywords** (now surfaced in
+  the record) plus documented gene/name/domain heuristics; a small seed list of
+  canonical examples is used only as a labelled fallback.
+  - Immunology: cytokine/chemokine/checkpoint/immunoglobulin/antigen-processing;
+    **HLA/MHC allele-aware** — allele identifiers (e.g. `HLA-A*02:01`) are
+    preserved from the query and never collapsed under the gene symbol.
+  - Oncology: role tagging (oncogene/tumor-suppressor/kinase/TF/DNA-repair/
+    apoptosis/cell-cycle) + curated cancer disease/variant associations, with an
+    explicit note **separating cancer association from any therapeutic claim**.
+  - Genetics: isoform/variant summary; residue-level path stays `/api/variant`.
+  - Classifications are context tags, never clinical assertions. +14 offline tests.
+
 ### Genetics / variant workspace (Phase 3 — started)
 - **Variant analysis** (`variants.py`, `GET /api/variant`) — parse `BRAF V600E`,
   `TP53 R175H`, or HGVS `P15056:p.Val600Glu` and map to a residue: sequence-

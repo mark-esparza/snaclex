@@ -54,7 +54,7 @@ low-confidence model is never marked dockable.
 | Genetics/variant analysis: parse `BRAF V600E` / `TP53 R175H` / HGVS → residue mapping (sequence coords) with **WT-residue validation**, coding consequence, domain disruption, curated-annotation overlap, known-variant match | 🟢 shipped | `variants.py`; `GET /api/variant` |
 | Clinical interpretation shown **with evidence + review status + limitations** (never a clinical call) | 🟢 shipped | `variants.analyze` |
 | Structure-coordinate mapping (per-PDB author numbering via SIFTS / Sequence Coordinates) | 🟡 canonical coord + structure list; SIFTS mapping pending | — |
-| Immunology / Oncology lenses over the same record + evidence model | 🔲 specified | — |
+| Immunology / Oncology / Genetics lenses over the same record + evidence model | 🟢 shipped | `workspaces.py`; `GET /api/workspace?view=...` |
 | Pathway (Reactome), PPI (IntAct/STRING/BioGRID), ClinVar, Ensembl/VEP, PubMed adapters — optional, env-gated, license-checked | 🔲 specified | — |
 
 The variant path deliberately makes **no** clinical claim: it maps the residue,

@@ -268,6 +268,8 @@ def parse_entry(data: dict) -> dict:
         "variants": features["variants"],
         "isoforms": comments["isoforms"],
         "disease_associations": comments["diseases"],
+        "keywords": [{"name": k.get("name"), "category": k.get("category")}
+                     for k in (data.get("keywords") or []) if k.get("name")],
         "cross_references": cross_references(data),
     }
     return {

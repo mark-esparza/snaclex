@@ -128,6 +128,17 @@ _ENDPOINTS = [
                    "a docking gate (low-confidence models are not marked dockable).",
     },
     {
+        "method": "GET", "path": "/api/workspace",
+        "params": {"acc": "protein identifier (required)",
+                   "view": "immunology | oncology | genetics | all (default all)"},
+        "returns": "research-domain lenses over the ProteinRecord: immunology "
+                   "(cytokine/chemokine/checkpoint/Ig/antigen-processing, HLA "
+                   "allele-aware), oncology (roles + cancer association, separated "
+                   "from any therapeutic claim), genetics (isoforms/variants). "
+                   "Grounded in curated UniProt keywords; classifications are "
+                   "context tags, not clinical assertions.",
+    },
+    {
         "method": "GET", "path": "/api/variant",
         "params": {"q": "variant, e.g. 'BRAF V600E' / 'TP53 R175H' / 'P15056:p.Val600Glu' (required)"},
         "returns": "residue-level variant analysis: sequence-coordinate mapping "

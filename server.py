@@ -51,6 +51,7 @@ from snaclex import (
     report,
     seqanalysis,
     variants,
+    workspaces,
 )
 from snaclex.http_util import FetchError
 
@@ -941,6 +942,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_evidence(qs)
         if path == "/api/variant":
             return self._api_variant(qs)
+        if path == "/api/workspace":
+            return self._api_workspace(qs)
         if path == "/api/version":
             return self._api_version(qs)
         if path == "/api/docs":
@@ -1493,6 +1496,38 @@ class Handler(BaseHTTPRequestHandler):
                 "review_status": record.get("review_status"),
             },
             "analysis": analysis,
+        })
+
+    def _api_workspace(self, qs):
+        query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'acc' parameter")
+        valid = {"immunology", "oncology", "genetics"}
+        view = (qs.get("view") or ["all"])[0].strip().lower()
+        if view in ("", "all"):
+            views = valid
+        else:
+            views = {v.strip() for v in view.split(",") if v.strip() in valid}
+            if not views:
+                return self._send_error_json(
+                    "view must be one or more of: immunology, oncology, genetics, all")
+        record, err = self._build_protein(query, with_structures=False)
+        if err:
+            return self._send_error_json(err)
+        if record.get("needs_disambiguation"):
+            return self._send_json({"needs_disambiguation": True,
+                                    "candidates": record.get("candidates", [])})
+        result = workspaces.apply_views(record, views, query=query)
+        return self._send_json({
+            "protein": {
+                "canonical_id": record.get("canonical_id"),
+                "accession": record["accessions"].get("uniprot_primary"),
+                "gene": (record.get("gene") or {}).get("symbol"),
+                "organism": (record.get("organism") or {}).get("scientific_name"),
+                "review_status": record.get("review_status"),
+            },
+            "views": sorted(views),
+            **result,
         })
 
     def _api_version(self, qs):

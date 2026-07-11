@@ -300,6 +300,25 @@ class TestPlatformEndpoints(unittest.TestCase):
         resp, out = self._get("/api/variant?q=not+a+variant")
         self.assertEqual(resp.status, 400)
 
+    def test_workspace_oncology_lens(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["keywords"] = [
+            {"name": "Proto-oncogene", "category": "x"}]
+        with mock.patch.object(server.idresolve, "resolve", return_value=res):
+            resp, out = self._get("/api/workspace?acc=P00519&view=oncology")
+        self.assertEqual(resp.status, 200)
+        self.assertIn("oncology", out)
+        self.assertNotIn("immunology", out)
+        roles = {r["role"] for r in out["oncology"]["roles"]}
+        self.assertIn("oncogene", roles)
+        self.assertIn("NO claim", out["oncology"]["separation_note"])
+
+    def test_workspace_bad_view_400(self):
+        resp, out = self._get("/api/workspace?acc=P00519&view=nonsense")
+        # resolve isn't reached; view validation fails first only if resolve ok —
+        # but bad view is rejected before building, so expect 400.
+        self.assertIn(resp.status, (400,))
+
     def test_evidence_level_d_candidates_opt_in(self):
         res = _resolution_with_uniprot()
         res["_uniprot_fragment"]["sequence"]["value"] = "A" * 40

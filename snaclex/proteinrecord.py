@@ -107,6 +107,7 @@ def build_record(resolution: dict, *, ph: float = 7.0) -> dict:
         "sequence_conflicts": [],
         "sequence_analysis": seq_analysis,  # calculated
         "functional_annotations": (up or {}).get("functional_annotations") or {},
+        "keywords": (up or {}).get("keywords") or [],
         "domains_motifs": (up or {}).get("domains_motifs") or [],
         "residue_annotations": (up or {}).get("residue_annotations") or [],
         "ptms": (up or {}).get("ptms") or [],
