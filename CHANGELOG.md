@@ -67,6 +67,15 @@ All notable changes to SnaCleX are documented here. This project adheres to
   differing taxa — explicitly a candidate view, **never a merge** (per the
   identity rules). +9 offline tests.
 
+### Literature (Phase 3)
+- **Literature tab populated for free** — `uniprot._references` extracts UniProt's
+  own curated citations (PMID/DOI/title/journal/year) from the entry JSON into the
+  record, so the Literature section needs no extra call.
+- **PubMed adapter** (`pubmed.py`, `GET /api/literature?acc=...`) — optional
+  deeper enrichment via NCBI E-utilities `elink` (protein→PubMed) + `esummary`,
+  reusing the `NCBI_API_KEY` rate policy; opt-in per request (`enrich=1`), citation
+  metadata only (no full text), degrades gracefully. +7 offline tests.
+
 ### Research-domain workspace lenses (Phase 3)
 - **Immunology / Oncology / Genetics lenses** (`workspaces.py`,
   `GET /api/workspace?view=...`) — research-domain *views* over the same

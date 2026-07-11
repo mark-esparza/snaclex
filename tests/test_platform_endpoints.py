@@ -313,6 +313,30 @@ class TestPlatformEndpoints(unittest.TestCase):
         self.assertIn("oncogene", roles)
         self.assertIn("NO claim", out["oncology"]["separation_note"])
 
+    def test_literature_curated_and_enriched(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["literature"] = [
+            {"pmid": "3018722", "title": "Cloning of ABL1",
+             "source": "UniProtKB reference"}]
+        with mock.patch.object(server.idresolve, "resolve", return_value=res), \
+             mock.patch.object(server.pubmed, "elink_pmids",
+                               return_value=["999", "3018722"]), \
+             mock.patch.object(server.pubmed, "fetch_summaries",
+                               return_value=[{"pmid": "999", "title": "Another"}]):
+            resp, out = self._get("/api/literature?acc=P00519&enrich=1")
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(out["curated_count"], 1)
+        # PMID already in curated refs is excluded from the enriched additions.
+        self.assertEqual([a["pmid"] for a in out["additional"]], ["999"])
+
+    def test_literature_curated_only_default(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["literature"] = []
+        with mock.patch.object(server.idresolve, "resolve", return_value=res):
+            resp, out = self._get("/api/literature?acc=P00519")
+        self.assertEqual(resp.status, 200)
+        self.assertNotIn("additional", out)  # no enrichment unless enrich=1
+
     def test_workspace_bad_view_400(self):
         resp, out = self._get("/api/workspace?acc=P00519&view=nonsense")
         # resolve isn't reached; view validation fails first only if resolve ok —

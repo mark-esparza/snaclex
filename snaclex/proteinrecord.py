@@ -118,7 +118,7 @@ def build_record(resolution: dict, *, ph: float = 7.0) -> dict:
         "protein_interactions": [],
         "pathways": [],
         "disease_associations": (up or {}).get("disease_associations") or [],
-        "literature": [],
+        "literature": (up or {}).get("literature") or [],
         "xref_graph": resolution.get("xref_graph") or {"nodes": [], "edges": []},
         "warnings": warnings,
         "provenance_summary": {

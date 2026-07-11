@@ -187,6 +187,7 @@ snaclex/
   ncbi.py              NCBI Protein / RefSeq (E-utilities)
   alphafold.py         AlphaFold DB (predicted models, pLDDT, PAE, confidence gate)
   interpro.py          InterPro families/domains (optional, env-gated)
+  pubmed.py            PubMed literature enrichment (optional, E-utilities)
   homology.py          homology-based structure selection (RCSB sequence search)
   # ── Structural Analysis component (existing, preserved) ──────────
   pdbparse.py          dependency-free PDB + mmCIF parser
@@ -234,6 +235,7 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/evidence?protein=...&chemical=...` | typed A–F protein–chemical evidence (never merged) |
 | `GET /api/variant?q=BRAF V600E` | residue-level variant mapping + consequence + clinical evidence (no clinical call) |
 | `GET /api/workspace?acc=...&view=...` | immunology / oncology / genetics lenses (HLA allele-aware; no therapeutic claims) |
+| `GET /api/literature?acc=...` | curated UniProt references + optional PubMed enrichment (`enrich=1`) |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
 | `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |
 | `POST /api/upload` | analyze a user-supplied PDB or mmCIF file (returns an upload id usable as `ID` above) |

@@ -214,6 +214,39 @@ def _comments(data: dict) -> dict:
             "tissue_specificity": tissue, "isoforms": isoforms, "diseases": diseases}
 
 
+def _references(data: dict) -> list[dict]:
+    """Extract curated literature references (PMID/DOI/title) from an entry.
+
+    UniProt entries carry their own curated citations, so the Literature tab is
+    populated for free — no extra network call. Deduplicated by PubMed id.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for ref in data.get("references") or []:
+        cit = ref.get("citation") or {}
+        pmid = doi = None
+        for x in cit.get("citationCrossReferences") or []:
+            if x.get("database") == "PubMed":
+                pmid = x.get("id")
+            elif x.get("database") == "DOI":
+                doi = x.get("id")
+        key = pmid or (cit.get("title") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        authors = cit.get("authors") or []
+        author_str = ", ".join(authors[:3]) + (" et al." if len(authors) > 3 else "")
+        out.append({
+            "pmid": pmid, "doi": doi,
+            "title": cit.get("title"),
+            "authors": author_str or None,
+            "journal": cit.get("journal"),
+            "year": cit.get("publicationDate"),
+            "source": "UniProtKB reference",
+        })
+    return out
+
+
 def cross_references(data: dict) -> dict:
     """Collect useful cross-references keyed by database (RefSeq, PDB, Ensembl…)."""
     xrefs: dict[str, list] = {}
@@ -270,6 +303,7 @@ def parse_entry(data: dict) -> dict:
         "disease_associations": comments["diseases"],
         "keywords": [{"name": k.get("name"), "category": k.get("category")}
                      for k in (data.get("keywords") or []) if k.get("name")],
+        "literature": _references(data),
         "cross_references": cross_references(data),
     }
     return {

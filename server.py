@@ -45,6 +45,7 @@ from snaclex import (
     pdbparse,
     pockets,
     proteinrecord,
+    pubmed,
     provenance,
     pubchem,
     rcsb,
@@ -944,6 +945,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_variant(qs)
         if path == "/api/workspace":
             return self._api_workspace(qs)
+        if path == "/api/literature":
+            return self._api_literature(qs)
         if path == "/api/version":
             return self._api_version(qs)
         if path == "/api/docs":
@@ -1497,6 +1500,32 @@ class Handler(BaseHTTPRequestHandler):
             },
             "analysis": analysis,
         })
+
+    def _api_literature(self, qs):
+        query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'acc' parameter")
+        record, err = self._build_protein(query, with_structures=False)
+        if err:
+            return self._send_error_json(err)
+        if record.get("needs_disambiguation"):
+            return self._send_json({"needs_disambiguation": True,
+                                    "candidates": record.get("candidates", [])})
+        curated = record.get("literature") or []
+        acc = record["accessions"].get("uniprot_primary")
+        out = {
+            "accession": acc,
+            "curated": curated,
+            "curated_count": len(curated),
+            "source": "UniProtKB curated references",
+        }
+        # Optional deeper enrichment via NCBI E-utilities (opt-in per request).
+        if self._truthy(qs, "enrich") and acc:
+            known = {c.get("pmid") for c in curated if c.get("pmid")}
+            extra_pmids = [p for p in pubmed.elink_pmids(acc) if p not in known][:20]
+            out["additional"] = pubmed.fetch_summaries(extra_pmids) if extra_pmids else []
+            out["additional_source"] = "PubMed (NCBI elink/esummary)"
+        return self._send_json(out)
 
     def _api_workspace(self, qs):
         query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])

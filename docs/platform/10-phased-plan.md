@@ -55,7 +55,8 @@ low-confidence model is never marked dockable.
 | Clinical interpretation shown **with evidence + review status + limitations** (never a clinical call) | 🟢 shipped | `variants.analyze` |
 | Structure-coordinate mapping (per-PDB author numbering via SIFTS / Sequence Coordinates) | 🟡 canonical coord + structure list; SIFTS mapping pending | — |
 | Immunology / Oncology / Genetics lenses over the same record + evidence model | 🟢 shipped | `workspaces.py`; `GET /api/workspace?view=...` |
-| Pathway (Reactome), PPI (IntAct/STRING/BioGRID), ClinVar, Ensembl/VEP, PubMed adapters — optional, env-gated, license-checked | 🔲 specified | — |
+| Literature (PubMed) — curated UniProt refs (free) + optional E-utilities enrichment | 🟢 shipped | `pubmed.py`; `uniprot._references`; `GET /api/literature` |
+| Pathway (Reactome), PPI (IntAct/STRING/BioGRID), ClinVar, Ensembl/VEP adapters — optional, env-gated, license-checked | 🔲 specified | — |
 
 The variant path deliberately makes **no** clinical claim: it maps the residue,
 validates the WT against the canonical sequence (catching wrong-isoform /

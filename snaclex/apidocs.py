@@ -128,6 +128,14 @@ _ENDPOINTS = [
                    "a docking gate (low-confidence models are not marked dockable).",
     },
     {
+        "method": "GET", "path": "/api/literature",
+        "params": {"acc": "protein identifier (required)",
+                   "enrich": "1 to add PubMed elink/esummary results (opt-in)"},
+        "returns": "curated UniProt references (free, no extra call) and, when "
+                   "enrich=1, additional PubMed articles linked to the protein via "
+                   "NCBI E-utilities. Citation metadata only (no full text).",
+    },
+    {
         "method": "GET", "path": "/api/workspace",
         "params": {"acc": "protein identifier (required)",
                    "view": "immunology | oncology | genetics | all (default all)"},
