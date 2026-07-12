@@ -5,6 +5,115 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Sequence-first platform (Phase 1 — expansion)
+- **New capability: analyze any cataloged protein, structure or not.** SnaCleX
+  now builds a unified, sequence-first **ProteinRecord** that exists even when no
+  crystal/cryo-EM/NMR structure is available — closing the app's biggest gap
+  (previously PDB-only). Full design set in [`docs/platform/`](docs/platform/).
+- **New source adapters** (separate, offline-testable, provenance-stamped):
+  `uniprot.py` (UniProtKB — primary annotation, Swiss-Prot vs TrEMBL),
+  `uniparc.py` (UniParc — sequence archive / identity bridge),
+  `ncbi.py` (NCBI Protein / RefSeq via E-utilities, optional `NCBI_API_KEY`),
+  `alphafold.py` (AlphaFold DB — predicted models, pLDDT bands, PAE, docking gate).
+  RCSB and PubChem adapters extended (by-UniProt structure search; BioAssay
+  evidence + InChIKey/parent normalization).
+- **New services**: `idresolve.py` (query interpretation + cross-reference graph;
+  identity by accession+taxon+checksum, never by name/gene alone),
+  `seqanalysis.py` (calculated MW/pI/charge@pH/GRAVY/composition/low-complexity —
+  pure, always available), `proteinrecord.py` (record assembly + Stage-4 structure
+  hierarchy), `evidence.py` (**universal evidence object + A–F levels with hard
+  invariants** — a docking score can never be an affinity; levels never merge),
+  `checksum.py` (SWISS-PROT CRC-64 + MD5/SHA-256 sequence identity).
+- **New API endpoints** (documented in `/api/docs`): `GET /api/resolve`,
+  `GET /api/protein`, `POST /api/protein/sequence`, `GET /api/sequence_analysis`,
+  `GET /api/structure_availability`, `GET /api/evidence`.
+- **Existing structural tooling preserved** as the modular Structural Analysis
+  component (analyze/interactions/pockets/evolution/docking unchanged).
+- **~60 new offline tests** (adapters, evidence invariants, sequence analysis,
+  identifier resolution, record assembly, platform endpoints). Suite stays fully
+  offline and dependency-free. Live source fields are marked `⚠ VERIFY` where the
+  environment's egress policy blocked round-trip confirmation.
+
+### Predicted structures & enrichment (Phase 2 — in progress)
+- **Confidence-aware AlphaFold handling** — `alphafold.build_confidence` derives
+  confidence bands, low-confidence and disordered regions, and a docking gate
+  from the model's **real per-residue pLDDT** (B-factor column), not just the API
+  summary metric. New `GET /api/model_confidence?acc=...` fetches coordinates on
+  demand (kept out of the lightweight availability path) so a low-confidence
+  model is never marked dockable.
+- **InterPro enrichment adapter** (`interpro.py`) — optional and env-gated
+  (`SNACLEX_ENABLE_INTERPRO`), provenance-stamped, degrades gracefully; families
+  and domains are kept **separate** from curated UniProt domains, each
+  source-labelled. New `GET /api/domains?acc=...`.
+- +10 offline tests (InterPro parse/gating, confidence gate, both endpoints).
+- **Homology-based structure selection** — `rcsb.sequence_search` (RCSB mmseqs2)
+  + `homology.py` find structurally-characterized homologs when a protein has no
+  direct structure. The Stage-4 hierarchy now ranks **experimental → homologous
+  experimental → predicted → sequence-only**; a homolog is only offered as a
+  docking receptor above a 0.40 identity floor and always carries a "not the
+  requested protein" caveat. New `GET /api/homologs?acc=...` and
+  `GET /api/protein?...&homologs=1`. The evidence endpoint surfaces Level-D
+  homolog *candidates* (`?homologs=1`) without asserting a "binds" claim. +13
+  offline tests.
+
+### Knowledge graph (Phase 4)
+- **Provenance-aware knowledge graph** (`knowledge_graph.py`, `GET /api/graph`)
+  projects a ProteinRecord — its structures, cross-references, isoforms, domains,
+  variants, diseases, literature, and any typed evidence — into the node/edge
+  schema from `docs/platform/04`. **Every edge carries provenance** (source
+  database, evidence type, experimental-vs-predicted, retrieval date, confidence,
+  and software version for computed edges). Experimental / homologous / predicted
+  structures stay distinctly typed, and A-vs-E chemical evidence remains separate
+  edges (one experimental, one predicted/inferred) — never merged. It is a pure
+  projection that introduces no new claims. +8 offline tests.
+
+### Batch & comparison (Phase 4 — started)
+- **Batch analysis** — `POST /api/protein/batch` resolves a list of protein
+  queries (≤25) through the existing async job queue (job kind `batch`), reusing
+  the same `build_protein_record` code path as the interactive endpoint. Per-item
+  failures are reported, not fatal; poll `GET /api/jobs/{id}`.
+- **Protein comparison** (`compare.py`) — family/ortholog view over the shared
+  ProteinRecord model: side-by-side metrics, shared-domain signal (in-all vs
+  in-some), and ortholog/paralog **candidate** grouping by gene symbol across
+  differing taxa — explicitly a candidate view, **never a merge** (per the
+  identity rules). +9 offline tests.
+
+### Literature (Phase 3)
+- **Literature tab populated for free** — `uniprot._references` extracts UniProt's
+  own curated citations (PMID/DOI/title/journal/year) from the entry JSON into the
+  record, so the Literature section needs no extra call.
+- **PubMed adapter** (`pubmed.py`, `GET /api/literature?acc=...`) — optional
+  deeper enrichment via NCBI E-utilities `elink` (protein→PubMed) + `esummary`,
+  reusing the `NCBI_API_KEY` rate policy; opt-in per request (`enrich=1`), citation
+  metadata only (no full text), degrades gracefully. +7 offline tests.
+
+### Research-domain workspace lenses (Phase 3)
+- **Immunology / Oncology / Genetics lenses** (`workspaces.py`,
+  `GET /api/workspace?view=...`) — research-domain *views* over the same
+  ProteinRecord, grounded first in **curated UniProt keywords** (now surfaced in
+  the record) plus documented gene/name/domain heuristics; a small seed list of
+  canonical examples is used only as a labelled fallback.
+  - Immunology: cytokine/chemokine/checkpoint/immunoglobulin/antigen-processing;
+    **HLA/MHC allele-aware** — allele identifiers (e.g. `HLA-A*02:01`) are
+    preserved from the query and never collapsed under the gene symbol.
+  - Oncology: role tagging (oncogene/tumor-suppressor/kinase/TF/DNA-repair/
+    apoptosis/cell-cycle) + curated cancer disease/variant associations, with an
+    explicit note **separating cancer association from any therapeutic claim**.
+  - Genetics: isoform/variant summary; residue-level path stays `/api/variant`.
+  - Classifications are context tags, never clinical assertions. +14 offline tests.
+
+### Genetics / variant workspace (Phase 3 — started)
+- **Variant analysis** (`variants.py`, `GET /api/variant`) — parse `BRAF V600E`,
+  `TP53 R175H`, or HGVS `P15056:p.Val600Glu` and map to a residue: sequence-
+  coordinate mapping with a **WT-residue validation** that catches wrong-isoform
+  / off-by-one numbering, coding consequence (missense/nonsense/synonymous),
+  domain-disruption context, overlap with curated residue annotations, and any
+  matching known natural variant. Clinical interpretation is shown **with its
+  source, the record's review status, and explicit limitations — never a
+  diagnosis, prognosis, or recommendation**. Frameshift/splice/start-loss and
+  population frequency are flagged as needing transcript-level (Ensembl/VEP) and
+  authorized (ClinVar) sources. +18 offline tests.
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,

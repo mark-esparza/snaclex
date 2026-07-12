@@ -57,6 +57,124 @@ _ENDPOINTS = [
         "returns": "ranked PDB full-text search results",
     },
     {
+        "method": "GET", "path": "/api/resolve",
+        "params": {"q": "protein/gene/accession/PDB/FASTA/variant (required)",
+                   "taxon": "optional NCBI taxon id filter",
+                   "accession": "optional explicit accession to disambiguate"},
+        "returns": "Stage 1/2: query_type, candidates, cross-reference graph, "
+                   "identity key (accession+taxon+checksum). Sequence-first.",
+    },
+    {
+        "method": "GET", "path": "/api/protein",
+        "params": {"q": "any protein identifier or FASTA (required)",
+                   "taxon": "optional taxon filter", "accession": "optional pick",
+                   "ph": "pH for estimated net charge (default 7.0)"},
+        "returns": "unified sequence-first ProteinRecord: identity, sequence + "
+                   "calculated analysis, annotations, structure availability "
+                   "(experimental→predicted→sequence-only), provenance. Returns "
+                   "{needs_disambiguation, candidates} when a name/gene is ambiguous.",
+    },
+    {
+        "method": "POST", "path": "/api/protein/batch",
+        "body": {"queries": "array of protein identifiers/FASTA (≤25)",
+                 "compare": "bool — include a family/ortholog comparison",
+                 "structures": "bool — include structure availability per item",
+                 "ph": "optional pH for net charge"},
+        "returns": "202 with {job_id}; poll GET /api/jobs/{id}. Result has "
+                   "per-item summaries, per-item errors, and (when compare) a "
+                   "comparison over the shared record model with shared-domain and "
+                   "ortholog/paralog *candidate* grouping (by gene symbol, not merged).",
+    },
+    {
+        "method": "POST", "path": "/api/protein/sequence",
+        "body": {"fasta": "raw FASTA or amino-acid sequence (required)",
+                 "ph": "optional pH for net charge"},
+        "returns": "same ProteinRecord as GET /api/protein, resolved from the "
+                   "sequence via the CRC-64 → UniParc → UniProt bridge.",
+    },
+    {
+        "method": "GET", "path": "/api/sequence_analysis",
+        "params": {"acc": "protein identifier (required)", "ph": "optional pH"},
+        "returns": "Stage 3 calculated metrics: MW, pI, charge@pH, GRAVY, "
+                   "composition, hydropathy profile, low-complexity regions.",
+    },
+    {
+        "method": "GET", "path": "/api/structure_availability",
+        "params": {"acc": "UniProt accession (required)"},
+        "returns": "Stage 4 hierarchy: experimental PDB entities, AlphaFold "
+                   "predicted models (pLDDT-gated docking suitability), or "
+                   "sequence-only; with warnings. Predicted never shown as experimental.",
+    },
+    {
+        "method": "GET", "path": "/api/homologs",
+        "params": {"acc": "protein identifier (required)"},
+        "returns": "structurally-characterized homologs via RCSB sequence search, "
+                   "each with sequence identity and a docking caveat. Homologous "
+                   "experimental structures rank above predicted models. Also "
+                   "reachable via GET /api/protein?...&homologs=1.",
+    },
+    {
+        "method": "GET", "path": "/api/domains",
+        "params": {"acc": "protein identifier (required)"},
+        "returns": "curated (UniProt) domains + optional InterPro families/domains "
+                   "(env-gated via SNACLEX_ENABLE_INTERPRO), each source-labelled "
+                   "and kept separate.",
+    },
+    {
+        "method": "GET", "path": "/api/model_confidence",
+        "params": {"acc": "UniProt accession (required)"},
+        "returns": "confidence-aware AlphaFold model summary from real per-residue "
+                   "pLDDT: confidence bands, low-confidence/disordered regions, and "
+                   "a docking gate (low-confidence models are not marked dockable).",
+    },
+    {
+        "method": "GET", "path": "/api/graph",
+        "params": {"acc": "protein identifier (required)",
+                   "structures": "0 to skip structure edges (default include)"},
+        "returns": "provenance-aware knowledge graph (nodes + edges) projecting "
+                   "the record, its structures, cross-references, variants, "
+                   "diseases, literature, and any typed evidence. Every edge "
+                   "carries source, evidence type, experimental-vs-predicted, "
+                   "retrieval date, confidence, and software version.",
+    },
+    {
+        "method": "GET", "path": "/api/literature",
+        "params": {"acc": "protein identifier (required)",
+                   "enrich": "1 to add PubMed elink/esummary results (opt-in)"},
+        "returns": "curated UniProt references (free, no extra call) and, when "
+                   "enrich=1, additional PubMed articles linked to the protein via "
+                   "NCBI E-utilities. Citation metadata only (no full text).",
+    },
+    {
+        "method": "GET", "path": "/api/workspace",
+        "params": {"acc": "protein identifier (required)",
+                   "view": "immunology | oncology | genetics | all (default all)"},
+        "returns": "research-domain lenses over the ProteinRecord: immunology "
+                   "(cytokine/chemokine/checkpoint/Ig/antigen-processing, HLA "
+                   "allele-aware), oncology (roles + cancer association, separated "
+                   "from any therapeutic claim), genetics (isoforms/variants). "
+                   "Grounded in curated UniProt keywords; classifications are "
+                   "context tags, not clinical assertions.",
+    },
+    {
+        "method": "GET", "path": "/api/variant",
+        "params": {"q": "variant, e.g. 'BRAF V600E' / 'TP53 R175H' / 'P15056:p.Val600Glu' (required)"},
+        "returns": "residue-level variant analysis: sequence-coordinate mapping "
+                   "with WT-residue validation, coding consequence, domain "
+                   "disruption, curated-annotation overlap, known-variant match, "
+                   "and clinical interpretation shown WITH evidence + review status "
+                   "and limitations — never a clinical recommendation.",
+    },
+    {
+        "method": "GET", "path": "/api/evidence",
+        "params": {"protein": "protein identifier (required)",
+                   "chemical": "chemical name/CID/InChIKey (required)"},
+        "returns": "typed A–F protein–chemical evidence, never merged: Level B "
+                   "from PubChem BioAssay (incl. inactives), plus a separate "
+                   "docking (Level E) note. Docking scores are fit scores, not "
+                   "affinities. Summary reports direct vs predicted counts.",
+    },
+    {
         "method": "GET", "path": "/api/version",
         "params": {},
         "returns": "name, version, research_only",

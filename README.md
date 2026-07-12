@@ -55,6 +55,25 @@ behind it, and exports to JSON/CSV/PDB.
    rotatable bonds, SMILES, Lipinski druglikeness, plus ChEMBL development status.
 8. **Research report** — plain-language summary + generated hypotheses, exportable as `.txt`.
 
+## Sequence-first platform (new)
+
+SnaCleX is expanding from a PDB-centred docking tool into a **sequence-first,
+structure-aware** protein & chemical platform: enter a UniProt/UniParc/NCBI/RefSeq
+accession, a gene, a raw FASTA, a PDB id, or a chemical, and get a unified
+**ProteinRecord** that exists *even when no experimental structure does*. It
+resolves identity across UniProtKB, UniParc, NCBI/RefSeq and RCSB (by accession,
+taxonomy and sequence checksum — never by name alone), runs always-available
+sequence analysis (MW, pI, charge@pH, GRAVY, composition, low-complexity),
+detects experimental structures and falls back to AlphaFold predicted models
+(pLDDT-gated), and separates protein–chemical evidence into **six levels (A–F)**
+where a docking score is never presented as a measured affinity.
+
+The full design set — PRD, architecture, data model, evidence hierarchy,
+identifier-resolution strategy, API, phased plan and validation plan — lives in
+[`docs/platform/`](docs/platform/). This is Phase 1 (the existing structural
+tooling is preserved as the modular *Structural Analysis* component); Phases 2–4
+are specified there but not yet built.
+
 ## Pockets (apo-structure docking)
 
 When a structure has no bound ligand, SnaCleX finds cavities with a pure-Python
@@ -154,23 +173,43 @@ request after a pause may take ~30 s to wake.
 ```
 server.py              stdlib HTTP server + JSON API
 snaclex/
-  http_util.py         urllib helpers
-  rcsb.py              PDB structure + metadata + search
-  pubchem.py           compound lookup + Lipinski
+  http_util.py         urllib helpers (retry/backoff/cache/rate-limit choke point)
+  cache.py             TTL disk cache for upstream responses
+  jobs.py              async job queue (ThreadPoolExecutor)
+  provenance.py        method/benchmark transparency blocks
+  apidocs.py           machine-readable API contract
+  # ── source adapters (one per source) ─────────────────────────────
+  rcsb.py              PDB structure + metadata + search + by-UniProt availability
+  pubchem.py           compound lookup + Lipinski + BioAssay + normalization
   chembl.py            optional drug/bioactivity cross-reference
+  uniprot.py           UniProtKB (primary annotation; Swiss-Prot vs TrEMBL)
+  uniparc.py           UniParc (sequence archive / identity bridge)
+  ncbi.py              NCBI Protein / RefSeq (E-utilities)
+  alphafold.py         AlphaFold DB (predicted models, pLDDT, PAE, confidence gate)
+  interpro.py          InterPro families/domains (optional, env-gated)
+  pubmed.py            PubMed literature enrichment (optional, E-utilities)
+  homology.py          homology-based structure selection (RCSB sequence search)
+  # ── Structural Analysis component (existing, preserved) ──────────
   pdbparse.py          dependency-free PDB + mmCIF parser
   interactions.py      atomic interaction profiler
   pockets.py           LIGSITE geometric cavity finder
   docking.py           grid-map Monte-Carlo rigid-body docker
+  evolution.py         Pfam conservation
   report.py            summary + hypothesis generator
-  jobs.py              async job queue (ThreadPoolExecutor)
-  cache.py             TTL disk cache for upstream responses
-  provenance.py        method/benchmark transparency blocks
   benchmark.py         redocking benchmark harness (CLI)
-  apidocs.py           machine-readable API contract
+  # ── platform services (sequence-first) ──────────────────────────
+  checksum.py          CRC-64/MD5/SHA-256 sequence identity
+  seqanalysis.py       calculated sequence metrics (Stage 3)
+  idresolve.py         query interpretation + xref graph (Stage 1/2)
+  proteinrecord.py     unified ProteinRecord + structure availability
+  evidence.py          universal evidence object + A–F levels
+  variants.py          variant parsing + residue-level analysis (Genetics)
+  compare.py           batch protein comparison (family / ortholog views)
+  workspaces.py        immunology / oncology / genetics research lenses
+  knowledge_graph.py   provenance-aware node/edge graph projection
 web/
   index.html style.css app.js
-legacy/                previous StructInteract CLI (archived)
+docs/platform/         sequence-first platform design set (PRD, architecture, …)
 ```
 
 ## API
@@ -185,6 +224,20 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/pockets?pdb=ID` | detected geometric cavities (ranked) + methods/provenance |
 | `GET /api/evolution?pdb=ID` | Pfam conservation per residue/pocket + methods/provenance |
 | `GET /api/search?q=TEXT` | PDB full-text search results |
+| `GET /api/resolve?q=...` | query interpretation + cross-reference graph (Stage 1/2) |
+| `GET /api/protein?q=...` | unified sequence-first ProteinRecord (+ structure availability) |
+| `POST /api/protein/sequence` | build a ProteinRecord from raw FASTA |
+| `POST /api/protein/batch` | async batch analysis + family/ortholog comparison (poll `/api/jobs/{id}`) |
+| `GET /api/sequence_analysis?acc=...` | calculated MW/pI/charge/GRAVY/composition |
+| `GET /api/structure_availability?acc=...` | experimental → homologous → AlphaFold → sequence-only hierarchy |
+| `GET /api/homologs?acc=...` | structurally-characterized homologs (RCSB sequence search) + identity |
+| `GET /api/domains?acc=...` | curated (UniProt) + optional InterPro domains, source-labelled |
+| `GET /api/model_confidence?acc=...` | AlphaFold per-residue pLDDT bands + docking gate |
+| `GET /api/evidence?protein=...&chemical=...` | typed A–F protein–chemical evidence (never merged) |
+| `GET /api/variant?q=BRAF V600E` | residue-level variant mapping + consequence + clinical evidence (no clinical call) |
+| `GET /api/workspace?acc=...&view=...` | immunology / oncology / genetics lenses (HLA allele-aware; no therapeutic claims) |
+| `GET /api/literature?acc=...` | curated UniProt references + optional PubMed enrichment (`enrich=1`) |
+| `GET /api/graph?acc=...` | provenance-aware knowledge graph (nodes + edges) over the record + evidence |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
 | `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |
 | `POST /api/upload` | analyze a user-supplied PDB or mmCIF file (returns an upload id usable as `ID` above) |
