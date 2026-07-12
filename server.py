@@ -41,6 +41,7 @@ from snaclex import (
     idresolve,
     interactions,
     interpro,
+    knowledge_graph,
     jobs,
     pdbparse,
     pockets,
@@ -947,6 +948,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_workspace(qs)
         if path == "/api/literature":
             return self._api_literature(qs)
+        if path == "/api/graph":
+            return self._api_graph(qs)
         if path == "/api/version":
             return self._api_version(qs)
         if path == "/api/docs":
@@ -1499,6 +1502,28 @@ class Handler(BaseHTTPRequestHandler):
                 "review_status": record.get("review_status"),
             },
             "analysis": analysis,
+        })
+
+    def _api_graph(self, qs):
+        query = clean_text((qs.get("acc") or qs.get("q") or [""])[0])
+        if not query:
+            return self._send_error_json("Missing 'acc' parameter")
+        # Structures are included by default so has_structure edges are populated;
+        # pass structures=0 to skip the RCSB/AlphaFold calls for a lighter graph.
+        with_structures = (qs.get("structures") or ["1"])[0].strip().lower() not in (
+            "0", "false", "off", "no")
+        record, err = self._build_protein(query, with_structures=with_structures)
+        if err:
+            return self._send_error_json(err)
+        if record.get("needs_disambiguation"):
+            return self._send_json({"needs_disambiguation": True,
+                                    "candidates": record.get("candidates", [])})
+        graph = knowledge_graph.build_graph(
+            record, evidence=record.get("chemical_evidence"))
+        return self._send_json({
+            "protein": {"canonical_id": record.get("canonical_id"),
+                        "accession": record["accessions"].get("uniprot_primary")},
+            "graph": graph,
         })
 
     def _api_literature(self, qs):

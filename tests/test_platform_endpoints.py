@@ -329,6 +329,26 @@ class TestPlatformEndpoints(unittest.TestCase):
         # PMID already in curated refs is excluded from the enriched additions.
         self.assertEqual([a["pmid"] for a in out["additional"]], ["999"])
 
+    def test_graph_endpoint(self):
+        res = _resolution_with_uniprot()
+        res["_uniprot_fragment"]["domains_motifs"] = [
+            {"name": "Protein kinase", "start": 1, "end": 10}]
+        avail = {"experimental": [{"pdb_id": "1IEP"}], "homologous": [],
+                 "predicted": [], "tier": "experimental",
+                 "best_for_docking": "1IEP", "warnings": []}
+        with mock.patch.object(server.idresolve, "resolve", return_value=res), \
+             mock.patch.object(server.proteinrecord, "structure_availability",
+                               return_value=avail):
+            resp, out = self._get("/api/graph?acc=P00519")
+        self.assertEqual(resp.status, 200)
+        g = out["graph"]
+        types = {n["type"] for n in g["nodes"]}
+        self.assertIn("Protein", types)
+        self.assertIn("Structure", types)
+        # Every edge carries provenance.
+        self.assertTrue(all("provenance" in e for e in g["edges"]))
+        self.assertIn("node_types", g["schema"])
+
     def test_literature_curated_only_default(self):
         res = _resolution_with_uniprot()
         res["_uniprot_fragment"]["literature"] = []

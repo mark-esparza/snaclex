@@ -75,7 +75,7 @@ needing transcript-level (Ensembl/VEP) and authorized (ClinVar) sources.
 | WT-vs-mutant comparison | 🟡 variant analysis exists (`variants.py`); dedicated diff view pending | — |
 | Chemical similarity & target comparison | 🔲 specified | — |
 | Optional Vina/GNINA docking; optional on-demand prediction (ESMFold/ColabFold) | 🔲 specified (env-gated) | — |
-| Knowledge-graph exploration | 🔲 specified (schema in [04](04-data-model.md)) | — |
+| Knowledge-graph exploration | 🟢 shipped | `knowledge_graph.py`; `GET /api/graph?acc=...` |
 
 Batch reuses the existing async job queue (`jobs.py`) and the shared
 `build_protein_record` code path — the same builder the interactive `/api/protein`

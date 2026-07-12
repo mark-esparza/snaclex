@@ -206,6 +206,7 @@ snaclex/
   variants.py          variant parsing + residue-level analysis (Genetics)
   compare.py           batch protein comparison (family / ortholog views)
   workspaces.py        immunology / oncology / genetics research lenses
+  knowledge_graph.py   provenance-aware node/edge graph projection
 web/
   index.html style.css app.js
 docs/platform/         sequence-first platform design set (PRD, architecture, …)
@@ -236,6 +237,7 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/variant?q=BRAF V600E` | residue-level variant mapping + consequence + clinical evidence (no clinical call) |
 | `GET /api/workspace?acc=...&view=...` | immunology / oncology / genetics lenses (HLA allele-aware; no therapeutic claims) |
 | `GET /api/literature?acc=...` | curated UniProt references + optional PubMed enrichment (`enrich=1`) |
+| `GET /api/graph?acc=...` | provenance-aware knowledge graph (nodes + edges) over the record + evidence |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
 | `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |
 | `POST /api/upload` | analyze a user-supplied PDB or mmCIF file (returns an upload id usable as `ID` above) |

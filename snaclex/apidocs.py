@@ -128,6 +128,16 @@ _ENDPOINTS = [
                    "a docking gate (low-confidence models are not marked dockable).",
     },
     {
+        "method": "GET", "path": "/api/graph",
+        "params": {"acc": "protein identifier (required)",
+                   "structures": "0 to skip structure edges (default include)"},
+        "returns": "provenance-aware knowledge graph (nodes + edges) projecting "
+                   "the record, its structures, cross-references, variants, "
+                   "diseases, literature, and any typed evidence. Every edge "
+                   "carries source, evidence type, experimental-vs-predicted, "
+                   "retrieval date, confidence, and software version.",
+    },
+    {
         "method": "GET", "path": "/api/literature",
         "params": {"acc": "protein identifier (required)",
                    "enrich": "1 to add PubMed elink/esummary results (opt-in)"},

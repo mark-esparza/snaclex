@@ -56,6 +56,17 @@ All notable changes to SnaCleX are documented here. This project adheres to
   homolog *candidates* (`?homologs=1`) without asserting a "binds" claim. +13
   offline tests.
 
+### Knowledge graph (Phase 4)
+- **Provenance-aware knowledge graph** (`knowledge_graph.py`, `GET /api/graph`)
+  projects a ProteinRecord — its structures, cross-references, isoforms, domains,
+  variants, diseases, literature, and any typed evidence — into the node/edge
+  schema from `docs/platform/04`. **Every edge carries provenance** (source
+  database, evidence type, experimental-vs-predicted, retrieval date, confidence,
+  and software version for computed edges). Experimental / homologous / predicted
+  structures stay distinctly typed, and A-vs-E chemical evidence remains separate
+  edges (one experimental, one predicted/inferred) — never merged. It is a pure
+  projection that introduces no new claims. +8 offline tests.
+
 ### Batch & comparison (Phase 4 — started)
 - **Batch analysis** — `POST /api/protein/batch` resolves a list of protein
   queries (≤25) through the existing async job queue (job kind `batch`), reusing
