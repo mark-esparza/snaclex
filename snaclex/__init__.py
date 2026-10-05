@@ -1,6 +1,6 @@
 """SnaCleX: single-protein, atomic-level structure & ligand-interaction analyzer.
 
-Copyright (c) 2026 Mark Esparza. All rights reserved. Proprietary — see LICENSE.
+Copyright (c) 2026 Mark Esparza. Released under the MIT License; see LICENSE.
 
 
 Research-only computational tool. Loads experimental structures from the RCSB

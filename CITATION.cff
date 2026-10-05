@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "SnaCleX: a browser-based structural biology workbench for protein–ligand interaction analysis"
+abstract: >-
+  Browser based structural biology workbench for protein and ligand interaction
+  analysis, pocket detection and ranking, evolutionary conservation scoring, and
+  exploratory docking from RCSB PDB structures, with method provenance on every result.
+authors:
+  - family-names: Esparza
+    given-names: Mark
+    orcid: "https://orcid.org/0009-0000-5171-102X"
+doi: 10.5281/zenodo.23167410
+repository-code: "https://github.com/mark-esparza/snaclex"
+url: "https://mark-esparza.github.io"
+license: MIT
+version: 0.1.0
+keywords:
+  - structural biology
+  - protein ligand interactions
+  - molecular docking
+  - binding pockets
+  - evolutionary conservation

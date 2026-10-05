@@ -1,7 +1,7 @@
 SnaCleX — Third-Party Notices
-Copyright (c) 2026 Mark Esparza. All rights reserved.
+Copyright (c) 2026 Mark Esparza.
 
-SnaCleX is proprietary (see LICENSE). It interoperates with the following
+SnaCleX is released under the MIT License (see LICENSE). It interoperates with the following
 third-party software and public data resources, each governed by its own
 license/terms. SnaCleX accesses the data resources at runtime via their
 public APIs; it does not bundle or redistribute their databases.
@@ -26,7 +26,7 @@ NOTES
   detection, AutoDock-style grid scoring, mutual-information coevolution,
   Lipinski/Veber/Egan/BOILED-Egg filters, Shannon-entropy conservation) are
   published academic methods and are credited to their original authors. The
-  proprietary license covers SnaCleX's own source code and expression, not
+  MIT License covers SnaCleX's own source code and expression, not
   these underlying public methods.
 - Users who redistribute data obtained through SnaCleX (especially ChEMBL
   data under CC BY-SA) are responsible for complying with the relevant terms.

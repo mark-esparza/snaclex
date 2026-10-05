@@ -30,10 +30,10 @@ behind it, and exports to JSON/CSV/PDB.
 - **Focused on interpretation, provenance, and pocket-level reasoning** — not on
   throughput or affinity prediction.
 
-> **Copyright © 2026 Mark Esparza. All rights reserved.** SnaCleX is proprietary
-> software — see [LICENSE](LICENSE). No license to use, copy, modify, or
-> distribute is granted; the source is public for reference only. Third-party
-> components and data sources retain their own terms — see [NOTICE](NOTICE).
+> **Copyright © 2026 Mark Esparza.** SnaCleX is open-source software released under the
+> [MIT License](LICENSE). Third-party components and data sources retain their
+> own terms; see [NOTICE](NOTICE). If you use SnaCleX in research, please cite it
+> (see [CITATION.cff](CITATION.cff)): https://doi.org/10.5281/zenodo.23167410
 
 ## What it does
 

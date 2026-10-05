@@ -1,6 +1,6 @@
 """SnaCleX local web server (Python stdlib only).
 
-Copyright (c) 2026 Mark Esparza. All rights reserved. Proprietary — see LICENSE.
+Copyright (c) 2026 Mark Esparza. Released under the MIT License; see LICENSE.
 
 
 Serves the single-page frontend and a small JSON API that drives
