@@ -1,0 +1,56 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.4.2/3Dmol-min.js"></script>
+<style>html,body{margin:0;background:#fff}#v{width:1600px;height:1200px;position:relative}</style>
+</head><body><div id="v"></div>
+<script>
+const D = __DATA__, FIG = "__FIG__";
+const TYPE_COL = {salt_bridge:"#d62728", hydrogen_bond:"#1f77b4", hydrophobic:"#8c8c8c", aromatic:"#9467bd", metal_coordination:"#2ca02c"};
+const v = $3Dmol.createViewer("v", {backgroundColor: "white", antialias: true});
+const m = v.addModel(D.pdb, "pdb");
+const LAB = {fontSize: 26, fontColor: "black", showBackground: true, backgroundColor: "white",
+             backgroundOpacity: 0.85, borderThickness: 0, inFront: true};
+const resis = D.residues.map(r => r.resi);
+function labelRes(list, sel) {
+  for (const r of list) {
+    const at = m.selectedAtoms({resi: r.resi, chain: r.chain, hetflag: false});
+    const a = at[at.length - 1];
+    if (a) v.addLabel(`${r.resn[0]}${r.resn.slice(1).toLowerCase()}${r.resi}`, Object.assign({position: a}, LAB));
+  }
+}
+if (FIG === "fig1") {
+  v.setStyle({}, {cartoon: {color: "#dddddd", opacity: 0.55}});
+  v.setStyle({resi: resis, hetflag: false}, {cartoon: {color: "#dddddd", opacity: 0.55}, stick: {colorscheme: "cyanCarbon", radius: 0.18}});
+  v.setStyle({resn: "BEN"}, {stick: {colorscheme: "orangeCarbon", radius: 0.28}});
+  for (const c of D.contacts) {
+    v.addCylinder({start: {x: c.l[0], y: c.l[1], z: c.l[2]}, end: {x: c.p[0], y: c.p[1], z: c.p[2]},
+                   radius: 0.07, color: TYPE_COL[c.type] || "black", dashed: true, dashLength: 0.25, gapLength: 0.18});
+  }
+  labelRes(D.residues);
+  v.zoomTo({or: [{resn: "BEN"}, {resi: resis, hetflag: false}]});
+} else if (FIG === "fig2") {
+  v.setStyle({}, {cartoon: {color: "#cfcfcf"}});
+  v.setStyle({resn: "BEN"}, {stick: {colorscheme: "orangeCarbon", radius: 0.3}});
+  const pal = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2"];
+  for (const p of D.pockets) {
+    const col = pal[(p.rank - 1) % pal.length];
+    for (const q of p.points) v.addSphere({center: {x: q[0], y: q[1], z: q[2]}, radius: 0.45, color: col, opacity: 0.9});
+    const tag = p.dist < 3 ? `${p.rank} (S1)` : `${p.rank}`;
+    v.addLabel(tag, Object.assign({position: {x: p.center[0], y: p.center[1], z: p.center[2] + 3}}, LAB, {fontColor: col}));
+  }
+  v.zoomTo();
+} else {
+  const d = v.addModel(D.pose_pdb, "pdb");
+  v.setStyle({}, {cartoon: {color: "#dddddd", opacity: 0.5}});
+  v.setStyle({resi: [189, 190, 195, 219], hetflag: false}, {cartoon: {color: "#dddddd", opacity: 0.5}, stick: {colorscheme: "cyanCarbon", radius: 0.16}});
+  v.setStyle({resn: "BEN"}, {stick: {colorscheme: "orangeCarbon", radius: 0.3}});
+  v.setStyle({model: d}, {stick: {colorscheme: "greenCarbon", radius: 0.2}});
+  const ch = D.residues[0].chain;
+  labelRes([{resi: 189, resn: "ASP", chain: ch}, {resi: 190, resn: "SER", chain: ch}, {resi: 195, resn: "SER", chain: ch}, {resi: 219, resn: "GLY", chain: ch}]);
+  v.zoomTo({or: [{resn: "BEN"}, {resi: [189, 190, 195, 219], hetflag: false}]});
+}
+const ROT = (location.hash.slice(1) || "0,0").split(",").map(Number);
+if (ROT[0]) v.rotate(ROT[0], "y");
+if (ROT[1]) v.rotate(ROT[1], "x");
+v.render();
+</script></body></html>

@@ -1,0 +1,188 @@
+{
+ "dock_astex_diverse_set": {
+  "set": "astex_diverse_set",
+  "n_total": 85,
+  "n_scored": 85,
+  "n_errors": 0,
+  "errors": [],
+  "success_per_seed": [
+   28,
+   35,
+   37
+  ],
+  "success_mean_pct": 39.2,
+  "success_sd_pct": 4.5,
+  "success_best_score_of_3": "43/85 (50.6%)",
+  "success_any_of_3": "52/85 (61.2%)",
+  "median_rmsd_seed0_A": 5.0,
+  "median_rmsd_best_score_A": 1.89,
+  "nearest_atom_success_seed0": "35/85 (41.2%)",
+  "matched_vs_sym_seed0": "28/85 (32.9%)",
+  "n_sym_rmsd_fallback": 0,
+  "score_rank_correct": "35/85 (41.2%)",
+  "pocket_within_6A": "43/85 (50.6%)",
+  "pocket_top1": "29/85 (34.1%)",
+  "pocket_top3": "40/85 (47.1%)",
+  "no_pocket_found": 0,
+  "contact_recovery_mean_seed0": 67.8,
+  "clash_free_seed0": "67/85 (78.8%)",
+  "median_seconds_total": 56.2,
+  "median_seconds_dock": 7.55,
+  "median_seconds_pocket": 25.15,
+  "median_heavy_atoms": 23,
+  "by_size_seed0": {
+   "0-20": "6/34 (17.6%)",
+   "21-35": "20/48 (41.7%)",
+   "36-999": "2/3 (66.7%)"
+  }
+ },
+ "dock_posebusters_benchmark_set": {
+  "set": "posebusters_benchmark_set",
+  "n_total": 428,
+  "n_scored": 428,
+  "n_errors": 0,
+  "errors": [],
+  "success_per_seed": [
+   180,
+   169,
+   165
+  ],
+  "success_mean_pct": 40.0,
+  "success_sd_pct": 1.5,
+  "success_best_score_of_3": "202/428 (47.2%)",
+  "success_any_of_3": "256/428 (59.8%)",
+  "median_rmsd_seed0_A": 3.11,
+  "median_rmsd_best_score_A": 2.37,
+  "nearest_atom_success_seed0": "224/428 (52.3%)",
+  "matched_vs_sym_seed0": "180/428 (42.1%)",
+  "n_sym_rmsd_fallback": 0,
+  "score_rank_correct": "200/428 (46.7%)",
+  "pocket_within_6A": "220/428 (51.4%)",
+  "pocket_top1": "119/428 (27.8%)",
+  "pocket_top3": "200/428 (46.7%)",
+  "no_pocket_found": 0,
+  "contact_recovery_mean_seed0": 71.9,
+  "clash_free_seed0": "319/428 (74.5%)",
+  "median_seconds_total": 53.9,
+  "median_seconds_dock": 7.87,
+  "median_seconds_pocket": 22.15,
+  "median_heavy_atoms": 25.0,
+  "by_size_seed0": {
+   "0-20": "31/150 (20.7%)",
+   "21-35": "109/211 (51.7%)",
+   "36-999": "40/67 (59.7%)"
+  }
+ },
+ "plip_astex_diverse_set": {
+  "set": "astex_diverse_set",
+  "n_total": 85,
+  "n_compared": 85,
+  "errors": [],
+  "hydrogen_bond": {
+   "plip_residues": 231,
+   "snaclex_residues": 288,
+   "shared": 170,
+   "precision": 0.59,
+   "recall": 0.736,
+   "f1": 0.655
+  },
+  "salt_bridge": {
+   "plip_residues": 42,
+   "snaclex_residues": 133,
+   "shared": 36,
+   "precision": 0.271,
+   "recall": 0.857,
+   "f1": 0.411
+  },
+  "hydrophobic": {
+   "plip_residues": 346,
+   "snaclex_residues": 727,
+   "shared": 346,
+   "precision": 0.476,
+   "recall": 1.0,
+   "f1": 0.645
+  },
+  "aromatic": {
+   "plip_residues": 48,
+   "snaclex_residues": 143,
+   "shared": 32,
+   "precision": 0.224,
+   "recall": 0.667,
+   "f1": 0.335
+  },
+  "metal": {
+   "plip_residues": 0,
+   "snaclex_residues": 0,
+   "shared": 0,
+   "precision": null,
+   "recall": null,
+   "f1": null
+  },
+  "any": {
+   "plip_residues": 614,
+   "snaclex_residues": 976,
+   "shared": 598,
+   "precision": 0.613,
+   "recall": 0.974,
+   "f1": 0.752
+  },
+  "any_jaccard_median": 0.625,
+  "any_jaccard_mean": 0.599
+ },
+ "plip_posebusters_benchmark_set": {
+  "set": "posebusters_benchmark_set",
+  "n_total": 427,
+  "n_compared": 427,
+  "errors": [],
+  "hydrogen_bond": {
+   "plip_residues": 1683,
+   "snaclex_residues": 1933,
+   "shared": 1291,
+   "precision": 0.668,
+   "recall": 0.767,
+   "f1": 0.714
+  },
+  "salt_bridge": {
+   "plip_residues": 369,
+   "snaclex_residues": 705,
+   "shared": 340,
+   "precision": 0.482,
+   "recall": 0.921,
+   "f1": 0.633
+  },
+  "hydrophobic": {
+   "plip_residues": 1310,
+   "snaclex_residues": 3225,
+   "shared": 1310,
+   "precision": 0.406,
+   "recall": 1.0,
+   "f1": 0.578
+  },
+  "aromatic": {
+   "plip_residues": 208,
+   "snaclex_residues": 787,
+   "shared": 155,
+   "precision": 0.197,
+   "recall": 0.745,
+   "f1": 0.312
+  },
+  "metal": {
+   "plip_residues": 0,
+   "snaclex_residues": 0,
+   "shared": 0,
+   "precision": null,
+   "recall": null,
+   "f1": null
+  },
+  "any": {
+   "plip_residues": 3274,
+   "snaclex_residues": 4842,
+   "shared": 3127,
+   "precision": 0.646,
+   "recall": 0.955,
+   "f1": 0.771
+  },
+  "any_jaccard_median": 0.636,
+  "any_jaccard_mean": 0.629
+ }
+}

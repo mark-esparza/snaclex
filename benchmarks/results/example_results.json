@@ -1,0 +1,879 @@
+{
+ "pdb": "3PTB",
+ "run_utc": "2026-10-05 19:03 UTC",
+ "interactions": {
+  "contacts": [
+   {
+    "type": "hydrogen_bond",
+    "distance": 2.82,
+    "ligand_atom": {
+     "name": "N1",
+     "element": "N",
+     "serial": 1639,
+     "xyz": [
+      -2.797,
+      14.235,
+      14.491
+     ]
+    },
+    "protein_atom": {
+     "name": "O",
+     "element": "O",
+     "serial": 1416,
+     "xyz": [
+      -4.133,
+      16.632,
+      13.862
+     ],
+     "res_name": "GLY",
+     "res_seq": 219,
+     "chain": "A",
+     "res_id": "A/GLY219"
+    }
+   },
+   {
+    "type": "hydrogen_bond",
+    "distance": 3.04,
+    "ligand_atom": {
+     "name": "N2",
+     "element": "N",
+     "serial": 1640,
+     "xyz": [
+      -1.762,
+      12.391,
+      15.309
+     ]
+    },
+    "protein_atom": {
+     "name": "OG",
+     "element": "O",
+     "serial": 1259,
+     "xyz": [
+      -1.972,
+      10.002,
+      17.18
+     ],
+     "res_name": "SER",
+     "res_seq": 190,
+     "chain": "A",
+     "res_id": "A/SER190"
+    }
+   },
+   {
+    "type": "hydrogen_bond",
+    "distance": 3.22,
+    "ligand_atom": {
+     "name": "N2",
+     "element": "N",
+     "serial": 1640,
+     "xyz": [
+      -1.762,
+      12.391,
+      15.309
+     ]
+    },
+    "protein_atom": {
+     "name": "O",
+     "element": "O",
+     "serial": 1257,
+     "xyz": [
+      -4.851,
+      12.085,
+      16.148
+     ],
+     "res_name": "SER",
+     "res_seq": 190,
+     "chain": "A",
+     "res_id": "A/SER190"
+    }
+   },
+   {
+    "type": "hydrogen_bond",
+    "distance": 3.4,
+    "ligand_atom": {
+     "name": "N1",
+     "element": "N",
+     "serial": 1639,
+     "xyz": [
+      -2.797,
+      14.235,
+      14.491
+     ]
+    },
+    "protein_atom": {
+     "name": "O",
+     "element": "O",
+     "serial": 1257,
+     "xyz": [
+      -4.851,
+      12.085,
+      16.148
+     ],
+     "res_name": "SER",
+     "res_seq": 190,
+     "chain": "A",
+     "res_id": "A/SER190"
+    }
+   },
+   {
+    "type": "hydrophobic",
+    "distance": 3.7,
+    "ligand_atom": {
+     "name": "C5",
+     "element": "C",
+     "serial": 1636,
+     "xyz": [
+      -0.914,
+      14.295,
+      18.885
+     ]
+    },
+    "protein_atom": {
+     "name": "CG1",
+     "element": "C",
+     "serial": 1381,
+     "xyz": [
+      0.075,
+      10.897,
+      19.95
+     ],
+     "res_name": "VAL",
+     "res_seq": 213,
+     "chain": "A",
+     "res_id": "A/VAL213"
+    }
+   },
+   {
+    "type": "hydrophobic",
+    "distance": 3.77,
+    "ligand_atom": {
+     "name": "C",
+     "element": "C",
+     "serial": 1638,
+     "xyz": [
+      -2.193,
+      13.627,
+      15.496
+     ]
+    },
+    "protein_atom": {
+     "name": "C",
+     "element": "C",
+     "serial": 1256,
+     "xyz": [
+      -4.689,
+      11.403,
+      17.229
+     ],
+     "res_name": "SER",
+     "res_seq": 190,
+     "chain": "A",
+     "res_id": "A/SER190"
+    }
+   },
+   {
+    "type": "hydrophobic",
+    "distance": 3.85,
+    "ligand_atom": {
+     "name": "C1",
+     "element": "C",
+     "serial": 1632,
+     "xyz": [
+      -1.853,
+      14.311,
+      16.658
+     ]
+    },
+    "protein_atom": {
+     "name": "C",
+     "element": "C",
+     "serial": 1391,
+     "xyz": [
+      1.654,
+      15.202,
+      15.337
+     ],
+     "res_name": "TRP",
+     "res_seq": 215,
+     "chain": "A",
+     "res_id": "A/TRP215"
+    }
+   },
+   {
+    "type": "hydrophobic",
+    "distance": 3.89,
+    "ligand_atom": {
+     "name": "C",
+     "element": "C",
+     "serial": 1638,
+     "xyz": [
+      -2.193,
+      13.627,
+      15.496
+     ]
+    },
+    "protein_atom": {
+     "name": "CG",
+     "element": "C",
+     "serial": 1251,
+     "xyz": [
+      -4.241,
+      11.204,
+      13.24
+     ],
+     "res_name": "ASP",
+     "res_seq": 189,
+     "chain": "A",
+     "res_id": "A/ASP189"
+    }
+   },
+   {
+    "type": "hydrophobic",
+    "distance": 3.99,
+    "ligand_atom": {
+     "name": "C1",
+     "element": "C",
+     "serial": 1632,
+     "xyz": [
+      -1.853,
+      14.311,
+      16.658
+     ]
+    },
+    "protein_atom": {
+     "name": "CA",
+     "element": "C",
+     "serial": 1261,
+     "xyz": [
+      -5.214,
+      13.339,
+      18.583
+     ],
+     "res_name": "CYS",
+     "res_seq": 191,
+     "chain": "A",
+     "res_id": "A/CYS191"
+    }
+   },
+   {
+    "type": "salt_bridge",
+    "distance": 2.87,
+    "ligand_atom": {
+     "name": "N2",
+     "element": "N",
+     "serial": 1640,
+     "xyz": [
+      -1.762,
+      12.391,
+      15.309
+     ]
+    },
+    "protein_atom": {
+     "name": "OD2",
+     "element": "O",
+     "serial": 1253,
+     "xyz": [
+      -3.203,
+      10.589,
+      13.598
+     ],
+     "res_name": "ASP",
+     "res_seq": 189,
+     "chain": "A",
+     "res_id": "A/ASP189"
+    }
+   },
+   {
+    "type": "salt_bridge",
+    "distance": 2.92,
+    "ligand_atom": {
+     "name": "N1",
+     "element": "N",
+     "serial": 1639,
+     "xyz": [
+      -2.797,
+      14.235,
+      14.491
+     ]
+    },
+    "protein_atom": {
+     "name": "OD1",
+     "element": "O",
+     "serial": 1252,
+     "xyz": [
+      -4.102,
+      12.34,
+      12.695
+     ],
+     "res_name": "ASP",
+     "res_seq": 189,
+     "chain": "A",
+     "res_id": "A/ASP189"
+    }
+   },
+   {
+    "type": "salt_bridge",
+    "distance": 3.51,
+    "ligand_atom": {
+     "name": "N2",
+     "element": "N",
+     "serial": 1640,
+     "xyz": [
+      -1.762,
+      12.391,
+      15.309
+     ]
+    },
+    "protein_atom": {
+     "name": "OD1",
+     "element": "O",
+     "serial": 1252,
+     "xyz": [
+      -4.102,
+      12.34,
+      12.695
+     ],
+     "res_name": "ASP",
+     "res_seq": 189,
+     "chain": "A",
+     "res_id": "A/ASP189"
+    }
+   },
+   {
+    "type": "salt_bridge",
+    "distance": 3.78,
+    "ligand_atom": {
+     "name": "N1",
+     "element": "N",
+     "serial": 1639,
+     "xyz": [
+      -2.797,
+      14.235,
+      14.491
+     ]
+    },
+    "protein_atom": {
+     "name": "OD2",
+     "element": "O",
+     "serial": 1253,
+     "xyz": [
+      -3.203,
+      10.589,
+      13.598
+     ],
+     "res_name": "ASP",
+     "res_seq": 189,
+     "chain": "A",
+     "res_id": "A/ASP189"
+    }
+   }
+  ],
+  "contact_residues": [
+   {
+    "res_id": "A/ASP189",
+    "res_name": "ASP",
+    "res_seq": 189,
+    "chain": "A",
+    "types": [
+     "hydrophobic",
+     "salt_bridge"
+    ],
+    "total": 5,
+    "min_distance": 2.87
+   },
+   {
+    "res_id": "A/SER190",
+    "res_name": "SER",
+    "res_seq": 190,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond",
+     "hydrophobic"
+    ],
+    "total": 4,
+    "min_distance": 3.04
+   },
+   {
+    "res_id": "A/GLY219",
+    "res_name": "GLY",
+    "res_seq": 219,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond"
+    ],
+    "total": 1,
+    "min_distance": 2.82
+   },
+   {
+    "res_id": "A/VAL213",
+    "res_name": "VAL",
+    "res_seq": 213,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.7
+   },
+   {
+    "res_id": "A/TRP215",
+    "res_name": "TRP",
+    "res_seq": 215,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.85
+   },
+   {
+    "res_id": "A/CYS191",
+    "res_name": "CYS",
+    "res_seq": 191,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.99
+   }
+  ],
+  "keys": [
+   "component",
+   "interactions",
+   "counts",
+   "interaction_total",
+   "contact_residues",
+   "contact_residue_count"
+  ]
+ },
+ "pockets_top5": [
+  {
+   "rank": 1,
+   "volume": null,
+   "enclosure": 6.2,
+   "score": 63.3,
+   "tier": "druggable",
+   "dist_to_ligand_A": 15.19,
+   "lining": [
+    "A/MET180",
+    "A/ASP165",
+    "A/ALA160",
+    "A/LEU163",
+    "A/GLN210",
+    "A/ALA129",
+    "A/ALA132",
+    "A/SER178",
+    "A/CYS182",
+    "A/CYS136",
+    "A/CYS232",
+    "A/LYS230"
+   ],
+   "keys": [
+    "index",
+    "center",
+    "n_points",
+    "volume_A3",
+    "enclosure",
+    "lining_residues",
+    "lining_residue_count",
+    "points",
+    "score",
+    "tier",
+    "subscores",
+    "composition"
+   ]
+  },
+  {
+   "rank": 2,
+   "volume": null,
+   "enclosure": 6.76,
+   "score": 58.1,
+   "tier": "druggable",
+   "dist_to_ligand_A": 21.34,
+   "lining": [
+    "A/ARG117",
+    "A/GLU77",
+    "A/VAL27",
+    "A/GLU70",
+    "A/GLU80",
+    "A/GLY69",
+    "A/GLN30",
+    "A/ASN25",
+    "A/THR26",
+    "A/ASP71",
+    "A/ASN79",
+    "A/PRO28"
+   ],
+   "keys": [
+    "index",
+    "center",
+    "n_points",
+    "volume_A3",
+    "enclosure",
+    "lining_residues",
+    "lining_residue_count",
+    "points",
+    "score",
+    "tier",
+    "subscores",
+    "composition"
+   ]
+  },
+  {
+   "rank": 3,
+   "volume": null,
+   "enclosure": 6.99,
+   "score": 53.9,
+   "tier": "pocket",
+   "dist_to_ligand_A": 8.49,
+   "lining": [
+    "A/LYS188",
+    "A/ASP189",
+    "A/ALA183",
+    "A/GLY188",
+    "A/LEU185",
+    "A/TYR184",
+    "A/SER190",
+    "A/GLY226",
+    "A/TYR228",
+    "A/ALA221",
+    "A/PRO225",
+    "A/ILE138"
+   ],
+   "keys": [
+    "index",
+    "center",
+    "n_points",
+    "volume_A3",
+    "enclosure",
+    "lining_residues",
+    "lining_residue_count",
+    "points",
+    "score",
+    "tier",
+    "subscores",
+    "composition"
+   ]
+  },
+  {
+   "rank": 4,
+   "volume": null,
+   "enclosure": 6.15,
+   "score": 44.3,
+   "tier": "ligandable",
+   "dist_to_ligand_A": 0.6,
+   "lining": [
+    "A/GLY219",
+    "A/SER214",
+    "A/SER190",
+    "A/ASP189",
+    "A/LYS224",
+    "A/SER217",
+    "A/GLN221",
+    "A/SER195",
+    "A/VAL227",
+    "A/GLY216",
+    "A/GLN192",
+    "A/CYS191"
+   ],
+   "keys": [
+    "index",
+    "center",
+    "n_points",
+    "volume_A3",
+    "enclosure",
+    "lining_residues",
+    "lining_residue_count",
+    "points",
+    "score",
+    "tier",
+    "subscores",
+    "composition"
+   ]
+  },
+  {
+   "rank": 5,
+   "volume": null,
+   "enclosure": 5.85,
+   "score": 42.4,
+   "tier": "pocket",
+   "dist_to_ligand_A": 21.47,
+   "lining": [
+    "A/ILE63",
+    "A/LYS60",
+    "A/ALA85",
+    "A/SER88",
+    "A/TYR59",
+    "A/ILE106",
+    "A/MET104",
+    "A/GLY62",
+    "A/LYS87",
+    "A/LEU33",
+    "A/SER61",
+    "A/VAL65"
+   ],
+   "keys": [
+    "index",
+    "center",
+    "n_points",
+    "volume_A3",
+    "enclosure",
+    "lining_residues",
+    "lining_residue_count",
+    "points",
+    "score",
+    "tier",
+    "subscores",
+    "composition"
+   ]
+  }
+ ],
+ "n_pockets": 6,
+ "conservation": {
+  "pfam": "PF00089",
+  "n_seqs": 1200,
+  "keys": [
+   "pfam",
+   "family_name",
+   "uniprot",
+   "n_sequences",
+   "target_length",
+   "mapped_residues",
+   "coverage",
+   "residues",
+   "top_conserved",
+   "coupling_pairs",
+   "coupling_hubs",
+   "coupling_confidence",
+   "coupling_reliable",
+   "consensus_identity",
+   "divergent_residues",
+   "_cons_by_key",
+   "_hub_keys",
+   "_divergent_keys"
+  ],
+  "pocket_conservation_top3": [
+   {
+    "index": 0,
+    "tier": "druggable",
+    "volume_A3": 169.0,
+    "mean_conservation": 0.384,
+    "conserved_residues": 33,
+    "coupling_hubs": 0,
+    "divergent_lining": 5,
+    "specificity_candidate": false,
+    "label": "moderately conserved"
+   },
+   {
+    "index": 1,
+    "tier": "druggable",
+    "volume_A3": 147.0,
+    "mean_conservation": 0.348,
+    "conserved_residues": 30,
+    "coupling_hubs": 1,
+    "divergent_lining": 2,
+    "specificity_candidate": false,
+    "label": "variable"
+   },
+   {
+    "index": 2,
+    "tier": "pocket",
+    "volume_A3": 71.0,
+    "mean_conservation": 0.425,
+    "conserved_residues": 24,
+    "coupling_hubs": 2,
+    "divergent_lining": 2,
+    "specificity_candidate": false,
+    "label": "moderately conserved"
+   }
+  ]
+ },
+ "redock_pubchem": {
+  "cid": 2332,
+  "score": -105.21,
+  "rmsd_A": 2.0,
+  "seconds": 0.7,
+  "contact_residues": [
+   {
+    "res_id": "A/ASP189",
+    "res_name": "ASP",
+    "res_seq": 189,
+    "chain": "A",
+    "types": [
+     "hydrophobic",
+     "salt_bridge"
+    ],
+    "total": 4,
+    "min_distance": 2.86
+   },
+   {
+    "res_id": "A/GLY226",
+    "res_name": "GLY",
+    "res_seq": 226,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond",
+     "hydrophobic"
+    ],
+    "total": 2,
+    "min_distance": 3.25
+   },
+   {
+    "res_id": "A/TYR228",
+    "res_name": "TYR",
+    "res_seq": 228,
+    "chain": "A",
+    "types": [
+     "aromatic",
+     "hydrophobic"
+    ],
+    "total": 2,
+    "min_distance": 3.74
+   },
+   {
+    "res_id": "A/VAL213",
+    "res_name": "VAL",
+    "res_seq": 213,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 2.81
+   },
+   {
+    "res_id": "A/GLY219",
+    "res_name": "GLY",
+    "res_seq": 219,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond"
+    ],
+    "total": 1,
+    "min_distance": 2.85
+   },
+   {
+    "res_id": "A/TRP215",
+    "res_name": "TRP",
+    "res_seq": 215,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.14
+   },
+   {
+    "res_id": "A/GLY216",
+    "res_name": "GLY",
+    "res_seq": 216,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.3
+   },
+   {
+    "res_id": "A/PRO225",
+    "res_name": "PRO",
+    "res_seq": 225,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond"
+    ],
+    "total": 1,
+    "min_distance": 3.4
+   },
+   {
+    "res_id": "A/SER190",
+    "res_name": "SER",
+    "res_seq": 190,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond"
+    ],
+    "total": 1,
+    "min_distance": 3.43
+   },
+   {
+    "res_id": "A/SER214",
+    "res_name": "SER",
+    "res_seq": 214,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.45
+   },
+   {
+    "res_id": "A/VAL227",
+    "res_name": "VAL",
+    "res_seq": 227,
+    "chain": "A",
+    "types": [
+     "hydrophobic"
+    ],
+    "total": 1,
+    "min_distance": 3.46
+   },
+   {
+    "res_id": "A/CYS220",
+    "res_name": "CYS",
+    "res_seq": 220,
+    "chain": "A",
+    "types": [
+     "hydrogen_bond"
+    ],
+    "total": 1,
+    "min_distance": 3.86
+   }
+  ]
+ },
+ "screen": [
+  {
+   "name": "4-aminobenzamidine",
+   "cid": 1725,
+   "heavy": 10,
+   "score": -106.71,
+   "per_atom": -10.671
+  },
+  {
+   "name": "benzamidine",
+   "cid": 2332,
+   "heavy": 9,
+   "score": -105.21,
+   "per_atom": -11.69
+  },
+  {
+   "name": "benzoic acid",
+   "cid": 243,
+   "heavy": 9,
+   "score": -99.99,
+   "per_atom": -11.11
+  },
+  {
+   "name": "benzylamine",
+   "cid": 7504,
+   "heavy": 8,
+   "score": -99.44,
+   "per_atom": -12.43
+  },
+  {
+   "name": "toluene",
+   "cid": 1140,
+   "heavy": 7,
+   "score": -90.12,
+   "per_atom": -12.874
+  },
+  {
+   "name": "phenol",
+   "cid": 996,
+   "heavy": 7,
+   "score": -87.9,
+   "per_atom": -12.557
+  }
+ ]
+}
