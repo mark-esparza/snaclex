@@ -5,6 +5,45 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed: the workbench ships bare
+What a researcher analyzes should not be nudged by the tool, so every
+suggestion has been removed from the workbench and moved to a help page where
+it reads as documentation rather than as a prompt.
+
+- **No suggested chemicals.** The docking and batch-screen placeholders named
+  specific molecules; they now describe the *kind* of value the field takes.
+- **No one-click reference structures.** The Benchmark tab offered three
+  curated cases as buttons. The capability is unchanged — benchmark whatever
+  you have loaded — and the curated list is now documented on the help page.
+- **No example ids in prose or error messages.**
+- A test (`tests/test_ui_bare.py`) now enforces this: the workbench surface may
+  not name an example molecule or structure, placeholders may not suggest a
+  value, and no input may ship with a prefilled `value=`.
+
+### Added: Help & Documentation page
+- **`/help.html`** — workflow, what each analysis computes and what it needs,
+  how to read every score, how to validate the method, how panels and their
+  verification banners work, a **glossary** (open since Phase 5), the data
+  sources, and the limitations in one place. Linked from the site nav on every
+  page, the footer, and the load card.
+- Reference benchmark cases are **fetched from `/api/benchmark/cases`** rather
+  than hardcoded, so the documented cases and the cases the project benchmarks
+  against cannot drift apart.
+
+### Fixed
+- **`/api.html` has never worked in production.** Its renderer was an inline
+  `<script>`, and the CSP is `script-src 'self'` with no `'unsafe-inline'`, so
+  the browser silently refused it and the page only ever showed "Loading…".
+  Moved to `web/api.js`. Nothing caught this because the markup was valid and
+  the server returned 200 — found by loading the page in a real browser against
+  the real CSP.
+- **Three regression tests** now reject any inline `<script>`, any inline event
+  handler, and any `<script src>` pointing at a missing file, across every
+  served page. Verified to fail against the old `api.html`.
+- **Added a favicon** (the masthead seal as SVG). Every browser requests
+  `/favicon.ico`; the site had none, so every page load logged a 404.
+
+
 ### Added: upstream connectivity self-test
 - **`snaclex/selftest.py` + `GET /api/selftest` + `python -m snaclex.selftest`** —
   SnaCleX has no database of its own; every result is assembled live from five

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SnaCleX — structural-biology workbench for protein–ligand interaction analysis</title>
   <meta name="description" content="A reproducible, browser-based structural-biology workbench for protein–ligand interaction analysis, pocket prioritization, conservation-guided interpretation, and exploratory docking. Research-only." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
 </head>
@@ -34,6 +35,7 @@
 
   <nav class="sitenav" aria-label="Site">
     <a href="/" class="here">Workbench</a>
+    <a href="/help.html">Help</a>
     <a href="/api.html">API Reference</a>
     <a href="https://www.rcsb.org/" rel="noopener noreferrer">RCSB PDB</a>
     <a href="https://pubchem.ncbi.nlm.nih.gov/" rel="noopener noreferrer">PubChem</a>
@@ -57,7 +59,9 @@
           <input id="pdbInput" type="text" placeholder="PDB ID or protein" aria-label="PDB ID or protein name" />
           <button id="loadBtn" class="primary">Go</button>
         </div>
-        <div class="hint">Enter a 4-character <b>PDB ID</b> to load it, or a <b>name</b> to search RCSB.</div>
+        <div class="hint">Enter a 4-character <b>PDB ID</b> to load it, or a
+          <b>name</b> to search RCSB. New here? See
+          <a href="/help.html">Help &amp; Documentation</a>.</div>
         <div class="upload-row">
           <label class="upload-btn" for="uploadInput">Upload PDB…</label>
           <input id="uploadInput" type="file" accept=".pdb,.ent,chemical/x-pdb" aria-label="Upload a PDB-format structure file" />
@@ -152,7 +156,7 @@
           <div class="dock-row">
             <div>
               <label class="field-label">Chemical to dock (PubChem name or CID)</label>
-              <input id="dockChemInput" type="text" placeholder="benzamidine · 2332 · aspirin" />
+              <input id="dockChemInput" type="text" placeholder="chemical name or PubChem CID" />
             </div>
             <div>
               <label class="field-label">Target pocket</label>
@@ -169,7 +173,7 @@
           <div class="dock-row">
             <div style="flex:2">
               <label class="field-label">Chemicals — comma or newline separated, up to 10</label>
-              <textarea id="screenInput" rows="2" placeholder="aspirin, ibuprofen, caffeine, benzamidine"></textarea>
+              <textarea id="screenInput" rows="2" placeholder="one chemical name or CID per line, or comma separated"></textarea>
             </div>
             <button id="screenBtn" class="primary">Screen</button>
           </div>
@@ -198,9 +202,7 @@
           <button id="benchLoadedBtn" class="primary">Benchmark loaded structure</button>
           <span class="hint" style="margin:0">Re-docks a known ligand into its own crystallographic site and reports how well SnaCleX recovers it — pocket, pose RMSD, interactions, and physical plausibility. The honest accuracy readout behind the tool.</span>
         </div>
-        <div class="section-h">Known cases</div>
-        <div id="benchmarkCases" class="examples">Loading curated cases…</div>
-        <div id="benchmarkContent" class="empty">Pick a known case above, or benchmark the loaded structure's ligand.</div>
+        <div id="benchmarkContent" class="empty">Load a structure with a bound ligand, then benchmark it.</div>
       </section>
 
       <section class="panel" data-panel="chemical">
@@ -225,6 +227,7 @@
     <div class="foot-rule"></div>
     <nav class="sitefoot-nav" aria-label="Footer">
       <a href="/">Workbench</a> |
+      <a href="/help.html">Help &amp; Documentation</a> |
       <a href="/api.html">API Reference</a> |
       <a href="/privacy.html">Privacy Notice</a> |
       <a href="/terms.html">Terms of Use</a>

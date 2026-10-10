@@ -817,6 +817,15 @@ a.ext, .policy a, .sitefoot a { color: var(--ink); }
 .policy li { margin: 5px 0; }
 .policy code, .api-sub code { background: var(--luna-tint2); border: 1px solid #c6d8ef; padding: 0 4px; font-family: var(--mono); font-size: 11.5px; }
 .policy-updated { color: var(--muted); font-size: 11.5px; }
+.help-toc {
+  margin: 14px 0 18px; padding: 8px 11px; font-size: 11.5px; line-height: 1.8;
+  background: var(--luna-tint2); border: 1px solid var(--rule);
+}
+.help-toc b { color: #15428b; margin-right: 4px; }
+.policy .tablebox { overflow-x: auto; margin: 6px 0 12px; }
+.policy table.data td:first-child { white-space: nowrap; }
+.policy ol { padding-left: 22px; }
+.policy ol li { margin: 7px 0; }
 .policy-foot { margin-top: 26px; padding-top: 12px; border-top: 1px solid #c9c4b0; font-size: 12.5px; }
 /* Subpages run a narrower measure than the workbench; the bands stay full
    bleed and only their contents narrow (handled by the padding gutter above). */

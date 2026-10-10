@@ -164,7 +164,7 @@ async function submitJob(
 function smartLoad(value) {
   const v = (value || "").trim();
   if (!v) {
-    setStatus("Enter a PDB ID (e.g. 1HSG) or a protein name (e.g. insulin).", "error");
+    setStatus("Enter a 4-character PDB ID, or a protein name to search.", "error");
     return;
   }
   if (/^[0-9A-Za-z]{4}$/.test(v)) {
@@ -177,7 +177,7 @@ function smartLoad(value) {
 async function loadStructure(pdbId, chain) {
   pdbId = (pdbId || "").trim().toUpperCase();
   if (!/^[0-9A-Z]{4}$/.test(pdbId)) {
-    setStatus("PDB IDs are 4 characters, e.g. 1HSG.", "error");
+    setStatus("PDB IDs are 4 characters.", "error");
     return;
   }
   setStatus(
@@ -336,7 +336,7 @@ function renderComponents(components) {
   list.innerHTML = "";
   if (!components.length) {
     card.hidden = false;
-    list.innerHTML = `<p class="hint">No bound ligands, ions, or metals in this structure (apo). Try 1HSG or 1CA2.</p>`;
+    list.innerHTML = `<p class="hint">No bound ligands, ions, or metals in this structure (apo). Use <b>Pockets</b> to find cavities to dock into.</p>`;
     return;
   }
   card.hidden = false;
@@ -2298,34 +2298,6 @@ function exportPosePDB() {
 }
 
 // ================= Benchmark Mode =================
-async function loadBenchmarkCases() {
-  const box = $("#benchmarkCases");
-  if (!box) return;
-  try {
-    const data = await getJSON("/api/benchmark/cases");
-    box.innerHTML =
-      (data.cases || [])
-        .map(
-          (c) =>
-            `<button class="ex bench-case" data-pdb="${escapeHtml(c.pdb)}" ` +
-            `data-ligand="${escapeHtml(c.ligand || "")}" ` +
-            `data-name="${escapeHtml(c.name || c.ligand || "")}" ` +
-            `title="${escapeHtml(c.site || "")}">` +
-            `${escapeHtml(c.pdb)} · ${escapeHtml(c.name || c.ligand || "")}</button>`
-        )
-        .join(" ") || "No cases.";
-    box.querySelectorAll(".bench-case").forEach((b) =>
-      b.addEventListener("click", () =>
-        runBenchmark(
-          { pdb: b.dataset.pdb, ligand: b.dataset.ligand },
-          `${b.dataset.pdb} · ${b.dataset.name}`
-        )
-      )
-    );
-  } catch (err) {
-    box.textContent = "Could not load benchmark cases: " + err.message;
-  }
-}
 
 async function runBenchmark(params, label) {
   switchTab("benchmark");
@@ -2400,7 +2372,6 @@ function init() {
       }
       runBenchmark({ pdb: state.pdbId }, state.pdbId);
     });
-  loadBenchmarkCases();
   $("#chemBtn").addEventListener("click", () => lookupChemical($("#chemInput").value));
   $("#chemInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") lookupChemical($("#chemInput").value);

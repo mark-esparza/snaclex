@@ -266,6 +266,9 @@ snaclex/
   selftest.py          upstream connectivity self-test (CLI + /api/selftest)
 web/
   index.html style.css app.js
+  help.html help.js      user guide, glossary, reference cases
+  api.html api.js        rendered API contract
+  favicon.svg
 legacy/                previous StructInteract CLI (archived)
 ```
 

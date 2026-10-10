@@ -5,6 +5,7 @@ exercise the rate limiter and input-sanitizer in isolation, plus the static
 list of expensive endpoints and the CSP contents.
 """
 
+import os
 import unittest
 
 import server
@@ -89,6 +90,74 @@ class TestSecurityConfig(unittest.TestCase):
         self.assertIn("https://pubchem.ncbi.nlm.nih.gov", server._CSP)
         self.assertIn("frame-ancestors 'none'", server._CSP)
         self.assertIn("object-src 'none'", server._CSP)
+
+
+class TestNoInlineScripts(unittest.TestCase):
+    """The CSP has no 'unsafe-inline' for scripts, so an inline <script> in any
+    served page is silently refused by the browser and that page just breaks.
+
+    This shipped once already: /api.html carried its renderer inline and had
+    only ever displayed "Loading…" in production. Nothing in the test suite
+    caught it because the markup was valid and the server returned 200.
+    """
+
+    WEB = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web"
+    )
+
+    def _pages(self):
+        return sorted(
+            f for f in os.listdir(self.WEB) if f.endswith(".html")
+        )
+
+    def test_pages_exist(self):
+        self.assertTrue(self._pages(), "no HTML pages found to check")
+
+    def test_no_inline_script_blocks(self):
+        import re
+
+        offenders = []
+        for name in self._pages():
+            with open(os.path.join(self.WEB, name), encoding="utf-8") as fh:
+                html = fh.read()
+            # A <script> with no src= and a non-empty body is inline.
+            for tag, body in re.findall(
+                r"(<script\b[^>]*>)(.*?)</script>", html, re.S | re.I
+            ):
+                if "src=" not in tag.lower() and body.strip():
+                    offenders.append(f"{name}: {tag}")
+        self.assertEqual(
+            offenders, [],
+            "inline <script> is blocked by the CSP; move it to a .js file: "
+            + "; ".join(offenders),
+        )
+
+    def test_no_inline_event_handlers(self):
+        """onclick= and friends are inline script too, and equally refused."""
+        import re
+
+        offenders = []
+        for name in self._pages():
+            with open(os.path.join(self.WEB, name), encoding="utf-8") as fh:
+                html = fh.read()
+            for m in re.finditer(r"\son(click|load|error|change|submit|input)\s*=", html, re.I):
+                offenders.append(f"{name}: {m.group(0).strip()}")
+        self.assertEqual(offenders, [], f"inline handlers found: {offenders}")
+
+    def test_referenced_scripts_exist(self):
+        """A <script src> pointing at nothing is a silent 404, not an error."""
+        import re
+
+        missing = []
+        for name in self._pages():
+            with open(os.path.join(self.WEB, name), encoding="utf-8") as fh:
+                html = fh.read()
+            for src in re.findall(r'<script[^>]+src="([^"]+)"', html, re.I):
+                if src.startswith(("http://", "https://", "//")):
+                    continue
+                if not os.path.isfile(os.path.join(self.WEB, src.lstrip("/"))):
+                    missing.append(f"{name} -> {src}")
+        self.assertEqual(missing, [], f"missing local scripts: {missing}")
 
 
 if __name__ == "__main__":

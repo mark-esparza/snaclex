@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SnaCleX — Help &amp; Documentation</title>
+  <meta name="description" content="How to use the SnaCleX structural-biology workbench: workflow, what each analysis does, how to read the scores, validation cases, and a glossary. Research-only." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="subpage">
+  <a class="skip-link" href="#maincontent">Skip to main content</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img" focusable="false">
+            <circle cx="20" cy="20" r="18.5" class="seal-ring" />
+            <circle cx="20" cy="20" r="15.5" class="seal-ring-thin" />
+            <path d="M20 9.2 L28.4 14.1 L28.4 23.9 L20 28.8 L11.6 23.9 L11.6 14.1 Z"
+                  class="seal-hex" />
+            <circle cx="20" cy="20" r="3.1" class="seal-core" />
+            <circle cx="20" cy="9.2" r="1.9" class="seal-node" />
+            <circle cx="28.4" cy="23.9" r="1.9" class="seal-node" />
+            <circle cx="11.6" cy="23.9" r="1.9" class="seal-node" />
+          </svg>
+        </span>
+      <div>
+        <h1>SnaCleX</h1>
+        <p class="tagline">Help &amp; documentation</p>
+      </div>
+    </div>
+    <div class="research-badge">RESEARCH ONLY · not for clinical use</div>
+  </header>
+
+  <nav class="sitenav" aria-label="Site">
+    <a href="/">Workbench</a>
+    <a href="/help.html" class="here">Help</a>
+    <a href="/api.html">API Reference</a>
+    <a href="https://www.rcsb.org/" rel="noopener noreferrer">RCSB PDB</a>
+    <a href="https://pubchem.ncbi.nlm.nih.gov/" rel="noopener noreferrer">PubChem</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="/terms.html">Terms</a>
+  </nav>
+
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="/">Home</a> <span aria-hidden="true">›</span> <span>Help &amp; Documentation</span>
+  </nav>
+
+  <main class="policy" id="maincontent">
+    <p class="policy-updated">
+      The workbench itself ships with no example structures, no suggested
+      chemicals and no pre-filled fields: what to analyze is entirely your
+      choice. Everything that would otherwise have been a hint or a demo
+      button lives on this page instead.
+    </p>
+
+    <nav class="help-toc" aria-label="On this page">
+      <b>On this page:</b>
+      <a href="#workflow">Workflow</a> ·
+      <a href="#analyses">What each analysis does</a> ·
+      <a href="#reading">Reading the numbers</a> ·
+      <a href="#validation">Validating the method</a> ·
+      <a href="#panels">Interaction panels</a> ·
+      <a href="#glossary">Glossary</a> ·
+      <a href="#sources">Data sources</a> ·
+      <a href="#limits">Limitations</a>
+    </nav>
+
+    <h2 id="workflow">Workflow</h2>
+    <ol>
+      <li><b>Load a structure.</b> Type a 4-character PDB ID to load it
+        directly, or type a protein name to full-text search the PDB and pick
+        from the results. You can also upload your own PDB or mmCIF file; it is
+        held in memory for your session and never written to disk.</li>
+      <li><b>Pick a bound molecule</b> (step 2 in the left column) to profile
+        every atomic contact it makes with the protein. If the structure is
+        <i>apo</i> — no bound ligand — skip this and use <b>Pockets</b>.</li>
+      <li><b>Run the analyses you need.</b> Each tab is independent; nothing is
+        computed until you ask for it.</li>
+      <li><b>Compile a report</b> on the Report tab, which aggregates
+        everything run this session and exports to TXT, JSON, CSV or PDB with
+        full method provenance.</li>
+    </ol>
+    <p>
+      Large assemblies are offered per chain rather than refused, so a structure
+      over the atom limit will ask you which chain to load.
+    </p>
+
+    <h2 id="analyses">What each analysis does</h2>
+    <div class="tablebox">
+      <table class="data">
+        <thead><tr><th scope="col">Tab</th><th scope="col">What it computes</th><th scope="col">Needs</th></tr></thead>
+        <tbody>
+          <tr><td><b>Overview</b></td><td>Entry metadata: experimental method, resolution, chains, atom and component counts.</td><td>a structure</td></tr>
+          <tr><td><b>3D Atomic Viewer</b></td><td>Cartoon + ligand sticks, dashed interaction lines, optional surface. Click an atom to identify it; turn on Measure for distances. Colour by element, chain, rainbow, B-factor or conservation.</td><td>a structure</td></tr>
+          <tr><td><b>Interactions</b></td><td>Every heavy-atom contact between the chosen molecule and the protein, classified by geometry, plus a per-residue hot-spot summary and a 2D schematic.</td><td>a bound molecule</td></tr>
+          <tr><td><b>Pockets</b></td><td>Geometric cavity detection (LIGSITE), ranked by a druggability score, with volume, enclosure and lining residues. Lets you target <i>apo</i> structures.</td><td>a structure</td></tr>
+          <tr><td><b>Evolution</b></td><td>Retrieves the Pfam family alignment and scores each residue and pocket by evolutionary conservation.</td><td>a real PDB id (not an upload)</td></tr>
+          <tr><td><b>Docking</b></td><td>Places a real PubChem 3D conformer into a chosen site by Monte-Carlo rigid-body search, then profiles the predicted pose. Batch screening docks several chemicals against one shared grid and ranks them.</td><td>a site (bound molecule or pocket)</td></tr>
+          <tr><td><b>Panels</b></td><td>Docks every ligand of a curated system into every target in it, returning a normalized matrix. See <a href="#panels">Interaction panels</a>.</td><td>nothing — self-contained</td></tr>
+          <tr><td><b>Benchmark</b></td><td>Re-docks a structure's own crystallographic ligand back into its own site and reports how well it is recovered. See <a href="#validation">Validating the method</a>.</td><td>a structure with a bound ligand</td></tr>
+          <tr><td><b>Chemical</b></td><td>PubChem properties, Lipinski and extended druglikeness rules, plus ChEMBL development status and mechanisms.</td><td>a chemical name or CID</td></tr>
+          <tr><td><b>Report</b></td><td>Plain-language synthesis of everything run this session, with generated hypotheses, limitations, and structured export.</td><td>at least one analysis</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="reading">Reading the numbers</h2>
+    <p>
+      <b>Docking score.</b> An AutoDock-style grid score in <b>relative units</b>
+      where lower is better. It is <b>not</b> calibrated to kcal/mol and is
+      <b>not</b> an affinity. It is comparable between ligands docked into the
+      same site in the same run, and not comparable across different sites.
+    </p>
+    <p>
+      <b>Ligand efficiency.</b> Score divided by heavy-atom count. Use this
+      rather than the raw score when comparing molecules of different sizes,
+      since a bigger molecule accumulates a better raw score simply by having
+      more atoms.
+    </p>
+    <p>
+      <b>Pocket druggability.</b> A geometric heuristic from volume, enclosure
+      and lining-residue composition. It says a cavity is shaped like pockets
+      that tend to bind drugs; it does not say anything binds there.
+    </p>
+    <p>
+      <b>Conservation.</b> Column-wise conservation in the Pfam family
+      alignment. A conserved residue is under selective pressure, which often
+      but not always means functional importance.
+    </p>
+    <p>
+      <b>Panel z-scores.</b> See <a href="#panels">Interaction panels</a> —
+      these are panel-relative contrasts, not affinities.
+    </p>
+    <p>
+      Every analysis carries a <b>Methods &amp; reproducibility</b> block with
+      the tool version, parameters, random seed and limitations behind that
+      specific result. Open it before citing a number.
+    </p>
+
+    <h2 id="validation">Validating the method</h2>
+    <p>
+      The <b>Benchmark</b> tab answers "does this tool actually recover an
+      answer we already know?". Load a structure that has a bound ligand and
+      benchmark it: SnaCleX re-docks that ligand into its own crystallographic
+      site and reports whether the pocket was found, the pose RMSD against the
+      deposited coordinates, how many of the real interactions were recovered,
+      and whether the pose is physically plausible.
+    </p>
+    <p>
+      Entries whose ligand and site are well characterised make the clearest
+      test, because you can check the answer against the literature. These
+      are the cases the project itself benchmarks against:
+    </p>
+    <div id="benchCases" class="hint">Loading reference cases…</div>
+    <p class="hint">
+      Reference cases are listed here as documentation. Nothing is pre-loaded
+      into the workbench — type an id into the load box if you want to run one.
+    </p>
+    <p>
+      Repository-level numbers across the full Astex Diverse and PoseBusters
+      sets are in <code>benchmarks/</code>, and the docking methods block in the
+      app surfaces the last committed benchmark summary alongside every result.
+    </p>
+
+    <h2 id="panels">Interaction panels</h2>
+    <p>
+      A panel is a <b>matrix</b> question: dock every ligand of a curated system
+      into every target in it, in one run. A curated system is a versioned
+      description of one piece of biology — its proteins, their sites, and the
+      molecules that act on them.
+    </p>
+    <p>
+      <b>Cells show z-scores, not raw scores, and this matters.</b> Raw scores
+      are not comparable across targets: a deeper pocket scores better for
+      <i>any</i> ligand, so reading a raw matrix across a row would rank pocket
+      burial rather than preference. Ligand efficiency is therefore standardized
+      within each target column (higher = better than that target's panel
+      average), and only those standardized values are compared along a row to
+      give the selectivity gap. Every z-score is relative to the panel you
+      submitted and changes if the panel changes.
+    </p>
+    <p>
+      <b>Read the verification banner.</b> A curated system asserts things you
+      cannot check by running the code: that a PDB entry really is the protein
+      named, that its site ligand is really deposited, that the UniProt mapping
+      holds. A system marked <b>DRAFT</b> has not had those assertions checked
+      against RCSB. Columns are also marked where a declared cofactor is missing
+      from the entry, which means that site is being scored as an empty cavity.
+    </p>
+
+    <h2 id="glossary">Glossary</h2>
+    <div class="tablebox">
+      <table class="data">
+        <tbody>
+          <tr><td><b>apo / holo</b></td><td>A structure solved without a bound ligand (apo) or with one (holo).</td></tr>
+          <tr><td><b>B-factor</b></td><td>Crystallographic temperature factor: how much an atom's position varies. High B means flexible or poorly ordered.</td></tr>
+          <tr><td><b>Cofactor</b></td><td>A non-protein molecule an enzyme needs to function (FAD, SAM, PLP, a metal ion). SnaCleX excludes these from docking grids unless a curated system declares them.</td></tr>
+          <tr><td><b>Conformer</b></td><td>One 3D arrangement of a flexible molecule. SnaCleX docks a single PubChem conformer rigidly.</td></tr>
+          <tr><td><b>Enclosure</b></td><td>How buried a cavity is — the fraction of directions from its centre that hit protein.</td></tr>
+          <tr><td><b>Heavy atom</b></td><td>Any atom that is not hydrogen. Crystal structures rarely resolve hydrogens, so all geometry here is heavy-atom.</td></tr>
+          <tr><td><b>Ligand efficiency</b></td><td>Score per heavy atom; controls for molecular size.</td></tr>
+          <tr><td><b>LIGSITE</b></td><td>The grid-scanning algorithm used for cavity detection.</td></tr>
+          <tr><td><b>mmCIF</b></td><td>The PDB's modern structure format, used for entries too large for the legacy PDB format.</td></tr>
+          <tr><td><b>Pfam</b></td><td>A database of protein family alignments, used here for conservation scoring.</td></tr>
+          <tr><td><b>RMSD</b></td><td>Root-mean-square deviation between two sets of coordinates. Under 2 Å is the usual threshold for "the pose was recovered".</td></tr>
+          <tr><td><b>Salt bridge</b></td><td>An electrostatic contact between oppositely charged groups.</td></tr>
+          <tr><td><b>z-score</b></td><td>How far a value sits from the mean, in standard deviations. In panels, computed within one target's column.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="sources">Data sources</h2>
+    <p>
+      SnaCleX has no database of its own. Every result is assembled live from
+      public services, so the tool is only as available as they are. You can
+      check all of them at once at
+      <a href="/api/selftest"><code>/api/selftest</code></a>.
+    </p>
+    <div class="tablebox">
+      <table class="data">
+        <thead><tr><th scope="col">Source</th><th scope="col">Used for</th></tr></thead>
+        <tbody>
+          <tr><td><b>RCSB Protein Data Bank</b></td><td>Structure coordinates, entry metadata, full-text search, UniProt mapping.</td></tr>
+          <tr><td><b>PubChem</b> (NCBI)</td><td>Chemical properties, druglikeness inputs, 3D conformers for docking.</td></tr>
+          <tr><td><b>ChEMBL</b> (EMBL-EBI)</td><td>Development status, mechanisms of action, measured activity.</td></tr>
+          <tr><td><b>InterPro / Pfam</b> (EMBL-EBI)</td><td>Family alignments for conservation scoring.</td></tr>
+          <tr><td><b>3Dmol.js</b></td><td>The in-browser 3D viewer.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">
+      Each service is governed by its own terms — see <a href="/privacy.html">Privacy</a>
+      and the repository's NOTICE file.
+    </p>
+
+    <h2 id="limits">Limitations</h2>
+    <p>
+      SnaCleX is an <b>interpretation workbench</b>, not a drug-discovery
+      pipeline, and every number it produces is a heuristic computed from a
+      single static structure. In particular:
+    </p>
+    <ul>
+      <li>Docking treats both the receptor and the ligand as <b>rigid</b>.
+        Induced fit, side-chain rearrangement and ligand strain are ignored.</li>
+      <li>There are <b>no explicit hydrogens</b> and no protonation or tautomer
+        enumeration, so the electrostatics of charged groups are approximated.</li>
+      <li>Scores are <b>not affinities</b> and are not calibrated to kcal/mol.</li>
+      <li>Waters, ions and cofactors are excluded from scoring grids unless a
+        curated system declares them, so a cofactor-dependent site may be scored
+        in an unphysical empty state.</li>
+      <li>Conservation depends on the family alignment available for that
+        protein; a small or skewed family gives a weak signal.</li>
+      <li>Nothing here models concentration, time, competition or expression.</li>
+    </ul>
+    <p>
+      <b>Research use only.</b> None of this is validated affinity data and none
+      of it is clinical guidance. Confirm anything you intend to act on with
+      orthogonal evidence and experiment.
+    </p>
+
+    <p class="policy-foot">
+      <a href="/">← Back to the workbench</a> ·
+      <a href="/api.html">API Reference</a> ·
+      <a href="/privacy.html">Privacy</a> ·
+      <a href="/terms.html">Terms</a>
+    </p>
+  </main>
+
+  <script src="help.js"></script>
+</body>
+</html>
