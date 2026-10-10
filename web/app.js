@@ -101,6 +101,24 @@ function setCrumb(structure, section) {
   }
 }
 
+// Persistent "what am I looking at" line, right-aligned in the section nav.
+function setTabsContext(id, data) {
+  const host = document.getElementById("tabsContext");
+  if (!host) return;
+  if (!id) {
+    host.textContent = "";
+    return;
+  }
+  const atoms = data.protein_atom_count;
+  const comps = (data.components || []).length;
+  const bits = [
+    atoms ? `${atoms.toLocaleString()} protein atoms` : null,
+    comps ? `${comps} bound component${comps === 1 ? "" : "s"}` : null,
+  ].filter(Boolean);
+  host.innerHTML =
+    `<b>${escapeHtml(id)}</b>` + (bits.length ? " · " + escapeHtml(bits.join(" · ")) : "");
+}
+
 async function getJSON(url) {
   const resp = await fetch(url);
   const data = await resp.json();
@@ -217,6 +235,7 @@ function renderChainPicker(pdbId, data) {
 // Populate state + render from an analyze/upload response. Shared by RCSB loads
 // and local uploads so both paths behave identically.
 function applyStructure(id, data) {
+  setTabsContext(id, data);
   setCrumb(
     [id, (data.metadata && data.metadata.title) || ""].filter(Boolean).join(" — "),
     null

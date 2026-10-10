@@ -271,6 +271,36 @@ class TestServerIntegration(unittest.TestCase):
 
     # ---- curated systems + interaction panels --------------------------
 
+    def _head(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("HEAD", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        return resp, body
+
+    def test_head_is_supported_with_headers_but_no_body(self):
+        """Uptime monitors and load balancers probe with HEAD, not GET."""
+        for path in ("/", "/api/version", "/style.css"):
+            resp, body = self._head(path)
+            self.assertEqual(resp.status, 200, path)
+            self.assertEqual(body, b"", path)
+            # Same metadata a GET would report, so a monitor can trust it.
+            self.assertTrue(resp.getheader("Content-Length"), path)
+            self.assertEqual(resp.getheader("X-Content-Type-Options"), "nosniff", path)
+
+    def test_head_content_length_matches_get(self):
+        for path in ("/", "/api/version"):
+            head, _ = self._head(path)
+            get, body = self._get(path)
+            self.assertEqual(head.getheader("Content-Length"),
+                             get.getheader("Content-Length"), path)
+            self.assertEqual(int(get.getheader("Content-Length")), len(body), path)
+
+    def test_head_on_missing_path_is_404(self):
+        resp, _ = self._head("/nope.html")
+        self.assertEqual(resp.status, 404)
+
     def test_systems_catalog_lists_curated_systems(self):
         resp, body = self._get("/api/systems")
         self.assertEqual(resp.status, 200)

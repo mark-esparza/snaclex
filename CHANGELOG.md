@@ -5,6 +5,23 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Interface
+- **Institutional seal** replaces the placeholder glyph in the masthead — an
+  inline SVG mark (ring, hexagon, gold core, three nodes), so it adds no
+  network origin and needs nothing from the CSP's `img-src`.
+- **The section nav's dead space now carries context** — the loaded structure's
+  id, protein atom count and bound-component count, right-aligned. The
+  breadcrumb scrolls away on a long results page; this does not.
+
+### Fixed
+- **`HEAD` requests returned 501.** `BaseHTTPRequestHandler` answers HEAD with
+  "Unsupported method" unless `do_HEAD` exists, so uptime monitors, load
+  balancers and link checkers all got an error from every URL. HEAD now
+  returns the same status, `Content-Length` and security headers as GET with
+  no body. Render's own health check uses GET, so this was latent rather than
+  a live outage.
+
+
 ### Interface: from desktop window to research site
 The theme kept its palette, fonts and widget treatment, but the page was built
 as an application *window* — a caption bar and menu bar wrapped around a tab

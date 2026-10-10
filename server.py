@@ -882,7 +882,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Retry-After", str(int(retry_after) + 1))
         self._common_headers()
         self.end_headers()
-        self.wfile.write(body)
+        self._write_body(body)
+
+    def _write_body(self, body):
+        """Write a response body, except on HEAD (headers only, same lengths)."""
+        if not getattr(self, "_head_only", False):
+            self.wfile.write(body)
 
     def _send_error_json(self, message, status=400, retry_after=None):
         self._send_json({"error": message}, status=status, retry_after=retry_after)
@@ -906,7 +911,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self._common_headers()
         self.end_headers()
-        self.wfile.write(body)
+        self._write_body(body)
 
     # ---- access logging ----------------------------------------------
     def _access_log(self, method, path):
@@ -918,6 +923,13 @@ class Handler(BaseHTTPRequestHandler):
                 method, path, status, dur_ms, _ip_hash(self._client_ip()))
 
     # ---- routing ------------------------------------------------------
+    def do_HEAD(self):
+        self._head_only = True
+        try:
+            self.do_GET()
+        finally:
+            self._head_only = False
+
     def do_GET(self):
         self._t0 = time.monotonic()
         self._status = None

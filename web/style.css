@@ -105,16 +105,15 @@ body {
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 /* Caption icon, drawn as a beveled tile. */
-.logo {
-  flex: none;
-  width: 34px; height: 34px;
-  display: grid; place-items: center;
-  font-size: 20px; line-height: 1;
-  color: #15428b;
-  background: linear-gradient(180deg, #ffffff, #dfe7f3);
-  border: 2px solid #ffffff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-}
+/* Institutional seal. Inline SVG, so it adds no network origin and nothing
+   for the CSP's img-src to allow. */
+.logo { flex: none; display: block; line-height: 0; }
+.logo svg { width: 38px; height: 38px; display: block; }
+.seal-ring { fill: #ffffff; stroke: #0d2f66; stroke-width: 1.4; }
+.seal-ring-thin { fill: none; stroke: #4a76b8; stroke-width: 0.9; }
+.seal-hex { fill: none; stroke: #15428b; stroke-width: 1.9; stroke-linejoin: round; }
+.seal-core { fill: #d9a100; stroke: #8a6400; stroke-width: 0.8; }
+.seal-node { fill: #15428b; }
 
 .topbar h1 {
   margin: 0;
@@ -349,6 +348,17 @@ button:disabled {
   font-weight: 700;
 }
 .tab.active:hover { background: var(--band); color: #fff; text-decoration: none; }
+
+/* The breadcrumb scrolls away on a long results page; this does not. */
+.tabs-context {
+  margin-left: auto;
+  align-self: center;
+  padding: 0 11px;
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42%;
+}
+.tabs-context b { color: #15428b; font-family: var(--mono); }
+.tabs-context:empty { display: none; }
 
 /* ---- status bar: sunken, with a grip ---- */
 .status-bar {
