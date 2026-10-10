@@ -20,6 +20,18 @@
     <div class="research-badge">RESEARCH ONLY · not for clinical use</div>
   </header>
 
+  <!-- Window chrome. Decorative only — every real control lives in the panels
+       below, so this is hidden from assistive tech rather than announced as a
+       menu that does nothing. -->
+  <div class="menubar" aria-hidden="true">
+    <span><u>F</u>ile</span>
+    <span><u>E</u>dit</span>
+    <span><u>V</u>iew</span>
+    <span><u>A</u>nalysis</span>
+    <span><u>T</u>ools</span>
+    <span><u>H</u>elp</span>
+  </div>
+
   <div class="layout">
     <!-- ===== Left control rail ===== -->
     <aside class="rail">
@@ -184,6 +196,7 @@
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
       <span class="muted">Data: RCSB · PubChem · ChEMBL · Pfam</span>
+      <span class="clock" id="trayClock"></span>
     </nav>
   </footer>
 

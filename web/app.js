@@ -819,11 +819,11 @@ function interactionDiagramSVG(profile) {
     const [col, dash] = style[prim];
     edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${col}" stroke-width="1.6"${dash !== "none" ? ` stroke-dasharray="${dash}"` : ""}/>`;
     const mx = cx + rx * 0.6 * Math.cos(ang), my = cy + ry * 0.6 * Math.sin(ang);
-    edges += `<text x="${mx}" y="${my - 2}" font-size="10" fill="#777" text-anchor="middle">${r.min_distance}Å</text>`;
+    edges += `<text x="${mx}" y="${my - 2}" font-size="10" fill="#4a4a4a" text-anchor="middle">${r.min_distance}Å</text>`;
     nodes += `<g class="ix-chip" data-focus="1" data-chain="${r.chain}" data-resi="${r.res_seq}" data-label="${r.res_name}${r.res_seq} (${r.chain})" style="cursor:pointer">
-      <rect x="${x - 41}" y="${y - 16}" width="82" height="32" rx="6" fill="#f6f6f6" stroke="#bcbcbc"/>
-      <text x="${x}" y="${y - 1}" font-size="12" font-weight="700" text-anchor="middle" fill="#1a1a1a">${r.res_name}${r.res_seq}</text>
-      <text x="${x}" y="${y + 11}" font-size="9" text-anchor="middle" fill="#6b6b6b">${r.chain} · ${r.total}×</text>
+      <rect x="${x - 41}" y="${y - 16}" width="82" height="32" rx="3" fill="#eef4fc" stroke="#a8c0e0"/>
+      <text x="${x}" y="${y - 1}" font-size="12" font-weight="700" text-anchor="middle" fill="#0a3f9e">${r.res_name}${r.res_seq}</text>
+      <text x="${x}" y="${y + 11}" font-size="9" text-anchor="middle" fill="#4a4a4a">${r.chain} · ${r.total}×</text>
     </g>`;
   });
   const present = [...new Set(res.flatMap((r) => r.types))].filter((t) => style[t]);
@@ -832,7 +832,7 @@ function interactionDiagramSVG(profile) {
       const [col, dash] = style[t];
       return `<g transform="translate(${14 + i * 132}, ${H - 12})">
         <line x1="0" y1="0" x2="26" y2="0" stroke="${col}" stroke-width="2"${dash !== "none" ? ` stroke-dasharray="${dash}"` : ""}/>
-        <text x="32" y="4" font-size="10" fill="#444">${TYPE_LABEL[t]}</text></g>`;
+        <text x="32" y="4" font-size="10" fill="#2b2b2b">${TYPE_LABEL[t]}</text></g>`;
     })
     .join("");
   return `
@@ -840,7 +840,7 @@ function interactionDiagramSVG(profile) {
     <div class="diagram-wrap">
       <svg viewBox="0 0 ${W} ${H}" class="interaction-diagram" xmlns="http://www.w3.org/2000/svg">
         ${edges}
-        <circle cx="${cx}" cy="${cy}" r="34" fill="#1a1a1a"/>
+        <circle cx="${cx}" cy="${cy}" r="34" fill="#0a56d6" stroke="#06327e" stroke-width="2"/>
         <text x="${cx}" y="${cy + 5}" font-size="15" font-weight="700" text-anchor="middle" fill="#ffffff">${lig}</text>
         ${nodes}${legend}
       </svg>
@@ -2112,8 +2112,25 @@ function init() {
     if (el) focusFromEl(el);
   });
 
+  startTrayClock();
+
   // Restore a shared scene if the URL carries state.
   if (location.search.includes("pdb=")) applyURLState();
+}
+
+// Taskbar tray clock. Decorative chrome, so it must never be able to break the
+// app: the element is optional and the interval is only armed if it exists.
+function startTrayClock() {
+  const el = document.getElementById("trayClock");
+  if (!el) return;
+  const tick = () => {
+    el.textContent = new Date().toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+  tick();
+  setInterval(tick, 15000);
 }
 
 document.addEventListener("DOMContentLoaded", init);

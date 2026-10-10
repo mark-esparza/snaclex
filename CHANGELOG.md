@@ -5,6 +5,38 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Interface: "Luna Lab" theme
+- **Full visual redesign** of `web/` as a Windows XP / late-90s scientific
+  workstation: the app is now one window on a desktop — Luna-blue caption with
+  working-looking caption glyphs, a menu bar, Explorer-bar task panels down the
+  left rail, a real tab control, 3D-beveled buttons and sunken data wells,
+  segmented "candy" progress bars, chunky period scrollbars, and a taskbar
+  footer whose Start button carries the research-only warning.
+- **Built entirely within the CSP.** `font-src 'self'` rules out webfonts, so
+  the theme uses Tahoma / MS Sans Serif (period-correct anyway) with non-Windows
+  fallbacks, and every bevel, gradient, caption glyph and grip is pure CSS or an
+  inline `data:` SVG — no image assets and no new network origins.
+- **Subpages inherit it for free** — privacy, terms and the API reference share
+  `.topbar` + `.policy`, so they now render as floating XP dialogs on the
+  desktop. They only needed a `subpage` body class to size the caption.
+- **The 2D interaction diagram** was rethemed to the same palette (Luna-blue
+  ligand node, pale-blue residue chips) and its label greys darkened for
+  contrast against the lighter well.
+- **Accessibility preserved and in two places improved** — visible focus rings
+  kept (now amber, which reads on both the chrome and the panels),
+  `prefers-reduced-motion` honoured, a `prefers-contrast: more` branch added,
+  and two contrast defects fixed before they shipped: the taskbar Start button
+  (3.2:1 → ~6:1) and the tray text (4.3:1 → ~4.8:1). The decorative menu bar is
+  `aria-hidden`, so it is not announced as a menu that does nothing.
+- **Narrow viewports drop the desktop metaphor** rather than shrink it: the
+  window goes edge to edge, caption buttons hide, and the taskbar un-fixes so
+  it cannot eat a small screen.
+- Verified in headless Chromium across overview, interactions, docking, report,
+  benchmark, a subpage and a 390px viewport, with **no uncaught JS errors** on
+  the golden path. Status, tab, component and panel hooks are unchanged, so the
+  existing e2e smoke test selectors still apply.
+
+
 ### Systems-level analysis: ligand x target interaction panels
 - **Interaction panels** (`snaclex/panel.py`, job kind `panel`) — the workbench
   is no longer limited to one structure and one site. A panel docks **every
