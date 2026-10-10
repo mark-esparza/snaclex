@@ -1,0 +1,283 @@
+{
+  "id": "catecholamine",
+  "name": "Catecholamine synthesis, signalling and clearance",
+  "version": "0.1.0-draft",
+  "description": "The enzymes that build and break down dopamine, noradrenaline and adrenaline, plus the principal adrenergic/dopaminergic receptors and the dopamine transporter, panelled against the pathway's own metabolites. Intended for asking which endogenous metabolites plausibly engage which proteins in the pathway, and how selectively.",
+  "curator": "Mark Esparza",
+  "curated_utc": "2026-10-10",
+  "last_verified_utc": null,
+  "curator_note": "DRAFT. The PDB accessions, site hints and UniProt mappings below were written from domain knowledge and have NOT been checked against RCSB. Run `python -m snaclex.systems verify catecholamine --write` on a networked machine before using, citing or publishing any result from this system. Targets addressed by `pocket` rather than by a co-crystallised ligand are docked into SnaCleX's own top-ranked cavity, which is not guaranteed to be the catalytic site -- see each target's site_note.",
+  "intended_use": "Hypothesis generation and triage: rank which (metabolite, protein) pairs in this pathway are worth measuring. Not a simulation of catecholamine physiology -- a panel carries no concentration, expression, competition or time dependence, and the scoring function is not an affinity. See docs/systems-pharmacology.md.",
+  "references": [
+    "Eisenhofer G, Kopin IJ, Goldstein DS. Catecholamine metabolism: a contemporary view. Pharmacol Rev 2004;56:331-349.",
+    "Daubner SC, Le T, Wang S. Tyrosine hydroxylase and regulation of dopamine synthesis. Arch Biochem Biophys 2011;508:1-12."
+  ],
+  "targets": [
+    {
+      "id": "TH",
+      "gene": "TH",
+      "label": "Tyrosine hydroxylase",
+      "role": "synthesis: L-tyrosine -> L-DOPA (rate-limiting)",
+      "pdb": "2XSN",
+      "uniprot": "P07101",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "Catalytic site requires a non-heme Fe(II) and tetrahydrobiopterin, both stripped from the docking grid. Scores here are the least physically meaningful in the panel.",
+      "verified": false,
+      "cofactors": [
+        "FE",
+        "FE2",
+        "HBI",
+        "H4B"
+      ]
+    },
+    {
+      "id": "DDC",
+      "gene": "DDC",
+      "label": "Aromatic L-amino acid decarboxylase (AADC)",
+      "role": "synthesis: L-DOPA -> dopamine",
+      "pdb": "1JS3",
+      "uniprot": "P20711",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "PLP-dependent; the cofactor is excluded from the grid. Entry may be a non-human orthologue -- verification will report the deposited organism.",
+      "verified": false,
+      "cofactors": [
+        "PLP",
+        "LLP",
+        "PMP"
+      ]
+    },
+    {
+      "id": "DBH",
+      "gene": "DBH",
+      "label": "Dopamine beta-hydroxylase",
+      "role": "synthesis: dopamine -> noradrenaline",
+      "pdb": "4ZEL",
+      "uniprot": "P09172",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "Dicopper active site; metals excluded from the grid.",
+      "verified": false,
+      "cofactors": [
+        "CU"
+      ]
+    },
+    {
+      "id": "PNMT",
+      "gene": "PNMT",
+      "label": "Phenylethanolamine N-methyltransferase",
+      "role": "synthesis: noradrenaline -> adrenaline",
+      "pdb": "1HNN",
+      "uniprot": "P11086",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "SAM-dependent methyltransferase; the SAM site is adjacent to the substrate site and may outrank it in cavity detection.",
+      "verified": false,
+      "cofactors": [
+        "SAM",
+        "SAH"
+      ]
+    },
+    {
+      "id": "MAOA",
+      "gene": "MAOA",
+      "label": "Monoamine oxidase A",
+      "role": "clearance: oxidative deamination of noradrenaline/adrenaline/dopamine",
+      "pdb": "2Z5X",
+      "uniprot": "P21397",
+      "site": {
+        "ligand": "HRM"
+      },
+      "site_note": "Site addressed by the co-crystallised inhibitor harmine. FAD is excluded from the grid.",
+      "verified": false,
+      "cofactors": [
+        "FAD"
+      ]
+    },
+    {
+      "id": "MAOB",
+      "gene": "MAOB",
+      "label": "Monoamine oxidase B",
+      "role": "clearance: oxidative deamination, dopamine-preferring",
+      "pdb": "2V5Z",
+      "uniprot": "P27338",
+      "site": {
+        "ligand": "SAG"
+      },
+      "site_note": "Site addressed by the co-crystallised inhibitor safinamide. FAD is excluded from the grid.",
+      "verified": false,
+      "cofactors": [
+        "FAD"
+      ]
+    },
+    {
+      "id": "COMT",
+      "gene": "COMT",
+      "label": "Catechol-O-methyltransferase (soluble)",
+      "role": "clearance: O-methylation of catechols",
+      "pdb": "3BWM",
+      "uniprot": "P21964",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "SAM- and Mg-dependent; both excluded from the grid.",
+      "verified": false,
+      "cofactors": [
+        "SAM",
+        "SAH",
+        "MG"
+      ]
+    },
+    {
+      "id": "SULT1A3",
+      "gene": "SULT1A3",
+      "label": "Catecholamine sulfotransferase",
+      "role": "clearance: sulfonation of circulating catecholamines",
+      "pdb": "2A3R",
+      "uniprot": "P0DMM9",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "PAPS-dependent; cofactor excluded from the grid.",
+      "verified": false,
+      "cofactors": [
+        "PAP",
+        "PPS",
+        "A3P"
+      ]
+    },
+    {
+      "id": "ADRB2",
+      "gene": "ADRB2",
+      "label": "Beta-2 adrenergic receptor",
+      "role": "signalling: adrenaline-preferring GPCR",
+      "pdb": "2RH1",
+      "uniprot": "P07550",
+      "site": {
+        "ligand": "CAU"
+      },
+      "site_note": "Orthosteric site addressed by the co-crystallised inverse agonist carazolol. The receptor is captured in an inactive conformation, which biases agonist docking.",
+      "verified": false
+    },
+    {
+      "id": "ADRB1",
+      "gene": "ADRB1",
+      "label": "Beta-1 adrenergic receptor",
+      "role": "signalling: cardiac adrenergic GPCR",
+      "pdb": "2VT4",
+      "uniprot": "P08588",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "Likely a non-human (turkey) orthologue; verification will report the deposited organism. Sequence differences in the orthosteric pocket are small but real.",
+      "verified": false
+    },
+    {
+      "id": "DRD3",
+      "gene": "DRD3",
+      "label": "Dopamine D3 receptor",
+      "role": "signalling: dopaminergic GPCR",
+      "pdb": "3PBL",
+      "uniprot": "P35462",
+      "site": {
+        "ligand": "ETQ"
+      },
+      "site_note": "Orthosteric site addressed by the co-crystallised antagonist eticlopride; inactive-state bias as above.",
+      "verified": false
+    },
+    {
+      "id": "DAT",
+      "gene": "SLC6A3",
+      "label": "Dopamine transporter",
+      "role": "clearance: synaptic dopamine reuptake",
+      "pdb": "4XP1",
+      "uniprot": "Q01959",
+      "site": {
+        "pocket": 0
+      },
+      "site_note": "Available structures are Drosophila dDAT, not human DAT; treat any human inference as indirect. Verification will report the deposited organism.",
+      "verified": false
+    }
+  ],
+  "ligands": [
+    {
+      "id": "tyrosine",
+      "query": "L-tyrosine",
+      "label": "L-tyrosine",
+      "role": "pathway precursor"
+    },
+    {
+      "id": "ldopa",
+      "query": "levodopa",
+      "label": "L-DOPA",
+      "role": "pathway intermediate"
+    },
+    {
+      "id": "dopamine",
+      "query": "dopamine",
+      "label": "Dopamine",
+      "role": "catecholamine"
+    },
+    {
+      "id": "norepinephrine",
+      "query": "norepinephrine",
+      "label": "Noradrenaline",
+      "role": "catecholamine"
+    },
+    {
+      "id": "epinephrine",
+      "query": "epinephrine",
+      "label": "Adrenaline",
+      "role": "catecholamine"
+    },
+    {
+      "id": "dopac",
+      "query": "3,4-dihydroxyphenylacetic acid",
+      "label": "DOPAC",
+      "role": "metabolite (MAO product)"
+    },
+    {
+      "id": "hva",
+      "query": "homovanillic acid",
+      "label": "Homovanillic acid",
+      "role": "metabolite (terminal, dopamine)"
+    },
+    {
+      "id": "normetanephrine",
+      "query": "normetanephrine",
+      "label": "Normetanephrine",
+      "role": "metabolite (COMT product)"
+    },
+    {
+      "id": "metanephrine",
+      "query": "metanephrine",
+      "label": "Metanephrine",
+      "role": "metabolite (COMT product)"
+    },
+    {
+      "id": "vma",
+      "query": "vanillylmandelic acid",
+      "label": "VMA",
+      "role": "metabolite (terminal, noradrenaline/adrenaline)"
+    },
+    {
+      "id": "entacapone",
+      "query": "entacapone",
+      "label": "Entacapone",
+      "role": "positive control: COMT inhibitor"
+    },
+    {
+      "id": "selegiline",
+      "query": "selegiline",
+      "label": "Selegiline",
+      "role": "positive control: MAO-B inhibitor"
+    }
+  ],
+  "controls_note": "Entacapone and selegiline are included as internal positive controls. A method that works should rank entacapone near the top of the COMT column and selegiline near the top of the MAO-B column. If it does not, treat the rest of that panel's rankings as unsupported.",
+  "cofactor_note": "Cofactor residue names are declared per target so they join the rigid receptor instead of being stripped from the scoring grid. Several are listed as alternatives (e.g. SAM or its demethylated product SAH, free PLP or its lysine-bound LLP form) because deposited entries differ; only the names actually present in a given entry are used, and any that are absent are reported as a per-target warning on the panel result. Verification records which are present."
+}

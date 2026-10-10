@@ -101,6 +101,62 @@ fit, with both total score and per-atom score (ligand efficiency) shown — tota
 score favours larger molecules, so per-atom is the fairer cross-size comparison.
 `GET /api/screen?pdb=ID&chems=a,b,c&comp=INDEX` (or `&pocket=INDEX`).
 
+## Interaction panels (many molecules x many targets)
+
+Everything above answers a *one structure, one site* question. A panel answers
+a **matrix** question: dock every ligand into every target in one run, and
+return a normalized grid of results.
+
+```
+POST /api/jobs  {"kind": "panel", "params": {"system": "catecholamine"}}
+GET  /api/jobs/{id}        # reports {done, total, percent} while it runs
+```
+
+Run it from a **curated system** (a versioned description of one piece of
+biology — targets with site hints, its ligands, references) or from an explicit
+spec:
+
+```json
+{"kind": "panel", "params": {
+  "targets": [{"id": "MAOB", "pdb": "2V5Z", "site": {"ligand": "SAG"},
+               "cofactors": ["FAD"]}],
+  "ligands": [{"id": "dopamine", "query": "dopamine"}]}}
+```
+
+`GET /api/systems` lists what's curated; `python -m snaclex.systems list` does
+the same offline. A **catecholamine** system (12 targets x 12 ligands) ships as
+the first curation.
+
+**Scores are normalized per target, and this matters.** A raw grid score is not
+comparable across targets — a deeper pocket scores better for *any* ligand, so
+reading a raw matrix row-wise ranks pocket burial, not preference. Ligand
+efficiency is therefore standardized within each target column (`z_target`,
+higher = better), and only those standardized values are compared across a
+ligand's row to give its `selectivity_gap`. Every z-score is relative to the
+panel you submitted and changes if the panel changes.
+
+Each cell can also carry the best matching **measured ChEMBL activity** for
+that pair, so predictions sit next to experiment rather than standing alone.
+
+> **What a panel is.** A static, structure-derived *hypothesis matrix*: a
+> ranked starting set of "this pair is worth measuring". It has no
+> concentration, no time, no expression level, no competition for a site and no
+> flux, and its scores are not affinities. It does not simulate a physiological
+> event. See [docs/systems-pharmacology.md](docs/systems-pharmacology.md) for
+> the limits that bite hardest and what each step beyond this actually
+> requires.
+
+**Curations ship as drafts.** A curated system asserts things you cannot check
+by running the code — that a PDB entry is the protein named, that the site
+ligand is really deposited, that the UniProt mapping holds. Every target is
+therefore marked `verified: false` until checked against RCSB:
+
+```
+python -m snaclex.systems verify catecholamine --write
+```
+
+Until then the DRAFT flag rides along on every API response and panel result.
+
 ## Interaction criteria (heavy-atom, no explicit H)
 
 | Type | Geometric rule |
@@ -162,6 +218,9 @@ snaclex/
   interactions.py      atomic interaction profiler
   pockets.py           LIGSITE geometric cavity finder
   docking.py           grid-map Monte-Carlo rigid-body docker
+  panel.py             M ligands x N targets interaction matrices
+  systems.py           curated biological systems + RCSB verification
+  data/systems/        curated system definitions (JSON)
   report.py            summary + hypothesis generator
   jobs.py              async job queue (ThreadPoolExecutor)
   cache.py             TTL disk cache for upstream responses
@@ -186,7 +245,8 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/evolution?pdb=ID` | Pfam conservation per residue/pocket + methods/provenance |
 | `GET /api/search?q=TEXT` | PDB full-text search results |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
-| `POST /api/jobs` → `GET /api/jobs/{id}` | submit a docking/screening job (`kind` = `dock`/`screen`) and poll its status/result |
+| `GET /api/systems` · `GET /api/systems/{id}` | curated systems runnable as a panel, with verification state |
+| `POST /api/jobs` → `GET /api/jobs/{id}` | submit a job (`kind` = `dock`/`screen`/`benchmark`/`panel`) and poll its status, progress and result |
 | `POST /api/upload` | analyze a user-supplied PDB or mmCIF file (returns an upload id usable as `ID` above) |
 
 `ID` is a 4-char PDB id **or** an upload id from `POST /api/upload`.

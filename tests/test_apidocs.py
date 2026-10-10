@@ -30,6 +30,34 @@ class TestApiDocs(unittest.TestCase):
     def test_serializable(self):
         json.dumps(self.c)
 
+    def test_every_routed_path_is_documented(self):
+        """Guard against the contract drifting behind the router.
+
+        Scrapes the literal paths the GET router compares against and asserts
+        each has a contract entry, so a new endpoint cannot ship undocumented.
+        """
+        import os
+        import re
+
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "server.py"), encoding="utf-8") as fh:
+            source = fh.read()
+
+        routed = set(re.findall(r'path == "(/api/[^"]*)"', source))
+        routed |= {
+            prefix + "{id}"
+            for prefix in re.findall(r'path\.startswith\("(/api/[^"]*/)"\)', source)
+        }
+        documented = {e["path"] for e in self.c["endpoints"]}
+
+        missing = {
+            path for path in routed
+            if path not in documented
+            and path.replace("{id}", "") not in
+            {d.split("{")[0] for d in documented}
+        }
+        self.assertEqual(missing, set(), f"undocumented endpoints: {missing}")
+
 
 if __name__ == "__main__":
     unittest.main()

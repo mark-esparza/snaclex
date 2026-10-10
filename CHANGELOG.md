@@ -5,6 +5,79 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Systems-level analysis: ligand x target interaction panels
+- **Interaction panels** (`snaclex/panel.py`, job kind `panel`) — the workbench
+  is no longer limited to one structure and one site. A panel docks **every
+  ligand into every target** in a single run and returns a normalized matrix,
+  so multi-molecule / multi-enzyme questions ("which of these metabolites
+  engage which of these enzymes, and how selectively?") can be asked directly.
+  One scoring grid is built per target and reused across all ligands, so the
+  cost is M*N docks but only N grid builds.
+- **Per-target normalization** — raw grid scores are *not* comparable across
+  targets (a deeper pocket scores better for any ligand), so ligand efficiency
+  is standardized within each target column (`z_target`, higher = better) and
+  only those standardized values are compared across a ligand's row to give a
+  `selectivity_gap`. The result states this explicitly; the previous batch
+  screen never had to, because it only ever ranked within one site.
+- **Measured activity alongside prediction** — each cell optionally carries the
+  best matching ChEMBL activity for that (ligand, target) pair, so predictions
+  sit next to experiment instead of standing alone.
+- **Curated systems** (`snaclex/systems.py`, `snaclex/data/systems/*.json`,
+  `GET /api/systems`) — versioned, reusable definitions of a piece of biology
+  (targets + site hints + ligands + references) runnable as a panel from one
+  id. Ships with a **catecholamine** system (12 targets x 12 ligands) covering
+  synthesis, signalling and clearance, including two positive-control
+  inhibitors so a panel's own rankings can be sanity-checked.
+- **Verification is a first-class field, not a footnote** — a curated system
+  asserts things a reader cannot check by running the code (that a PDB entry is
+  the protein named, that the site ligand is really deposited, that the UniProt
+  mapping holds). Every target therefore carries `verified: false` until
+  `python -m snaclex.systems verify <id> --write` confirms it against RCSB, and
+  **every API response and panel result carries the DRAFT flag** so an
+  unverified curation cannot be mistaken for a checked one downstream. The
+  shipped catecholamine system is a draft.
+- **Job progress reporting** — `JobManager.submit(..., wants_progress=True)`
+  injects a reporter, and `GET /api/jobs/{id}` now returns
+  `{done, total, percent, label}`. A 144-cell panel runs for minutes; without
+  this a client cannot tell a slow job from a wedged one.
+
+### Fixed
+- **Cofactors are no longer stripped from docking grids.**
+  `docking.build_grid(..., extra_atoms=)` can now include heterocomponents in
+  the rigid receptor. Previously only standard amino acids were scored, which
+  silently removed FAD from a monoamine-oxidase site, SAM/Mg from
+  catechol-O-methyltransferase and PLP from a decarboxylase — scoring
+  cofactor-dependent sites as empty cavities. Curated targets declare their
+  cofactors; any declared but absent from an entry is reported as a per-target
+  warning rather than passing silently. The server's grid cache keys on the
+  cofactor set, so a cofactor-free grid is never reused for a run that asked
+  for one. Existing dock/screen/benchmark behaviour is unchanged (opt-in).
+
+### Performance
+- **Panels retain only the site shell of each receptor** (whole residues within
+  `GRID_HALF + 12 A`), so a 16-target panel holds site neighbourhoods rather
+  than 16 full assemblies. Proven exact by test: a docked pose profiles to
+  identical contacts, counts and residues against the trimmed and untrimmed
+  receptor. Residues are kept whole so aromatic-ring perception is unaffected.
+
+### Documentation
+- **`docs/systems-pharmacology.md`** — what a panel can and cannot answer, the
+  three limits that bite hardest (cofactors, protonation, rigidity), and a
+  five-rung capability ladder from here to dynamic pathway modelling, naming
+  what each rung actually requires and where a structural workbench should stop
+  and interoperate (SBML/COPASI) instead of reimplementing. Includes the
+  validation strategy and where a spectral-prediction tool fits.
+
+### Testing
+- 204 offline tests (up from 176): the panel engine (shape, normalization,
+  resilience, guards, progress, geometry), site-shell equivalence, cofactor
+  handling, system validation/verification with injected RCSB fakes, and
+  end-to-end panel jobs over HTTP.
+- The API-contract test now **cross-checks every routed path against the
+  documented contract**, so a new endpoint cannot ship undocumented (it
+  previously only checked a hardcoded subset).
+
+
 ### Observability (Phase 7b)
 - **Structured request logging** — every request logs one line to stdout
   (`METHOD path -> status durationms ip=<hash>`) via the stdlib `logging` module,

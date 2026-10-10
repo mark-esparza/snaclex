@@ -115,11 +115,20 @@ class Grid:
         return s, d, a, h
 
 
-def _build_receptor(structure: Structure, center, cutoff) -> list:
+def _build_receptor(structure: Structure, center, cutoff, extra_atoms=None) -> list:
+    """Collect scoring atoms near `center`.
+
+    `extra_atoms` adds non-protein atoms (cofactors, structural metals,
+    catalytic waters) to the rigid receptor. By default only standard amino
+    acids are scored, which silently removes FAD from a monoamine oxidase site,
+    SAM from a methyltransferase, PLP from a decarboxylase, and so on -- so a
+    cofactor-dependent site is scored as an empty cavity. Callers that know
+    which heterocomponents are part of the site pass them here.
+    """
     cx, cy, cz = center
     reach = GRID_HALF + cutoff
     rec = []
-    for a in structure.protein_atoms:
+    for a in list(structure.protein_atoms) + list(extra_atoms or []):
         if a.element == "H":
             continue
         if abs(a.x - cx) > reach or abs(a.y - cy) > reach or abs(a.z - cz) > reach:
@@ -136,8 +145,13 @@ def _build_receptor(structure: Structure, center, cutoff) -> list:
     return rec
 
 
-def build_grid(structure: Structure, center) -> Grid:
-    rec = _build_receptor(structure, center, STERIC_CUT)
+def build_grid(structure: Structure, center, extra_atoms=None) -> Grid:
+    """Precompute the scoring grid around `center`.
+
+    Pass `extra_atoms` to include cofactors/metals as part of the rigid
+    receptor; see :func:`_build_receptor`.
+    """
+    rec = _build_receptor(structure, center, STERIC_CUT, extra_atoms)
     cell = _CellGrid(rec, STERIC_CUT)
     n = int((2 * GRID_HALF) / SPACING) + 1
     ox = center[0] - GRID_HALF
@@ -290,9 +304,10 @@ def _score(coords, elements, grid: Grid) -> float:
 # ---------------- search ----------------
 
 def dock(structure: Structure, ligand_atoms: list, center,
-         seeds: int = 220, mc_steps: int = 40, seed: int = 0) -> dict:
+         seeds: int = 220, mc_steps: int = 40, seed: int = 0,
+         extra_atoms=None) -> dict:
     """Dock a rigid ligand into the pocket centered at `center` (builds grid)."""
-    grid = build_grid(structure, center)
+    grid = build_grid(structure, center, extra_atoms)
     return dock_with_grid(grid, ligand_atoms, center, seeds, mc_steps, seed)
 
 

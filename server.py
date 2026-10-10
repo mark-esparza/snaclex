@@ -36,12 +36,14 @@ from snaclex import (
     evolution,
     interactions,
     jobs,
+    panel,
     pdbparse,
     pockets,
     provenance,
     pubchem,
     rcsb,
     report,
+    systems,
 )
 from snaclex.http_util import FetchError
 
@@ -347,15 +349,23 @@ def _get_pockets(pdb_id: str) -> list:
     return found
 
 
-def _get_grid(pdb_id, structure, center):
-    """Return a cached docking grid for (pdb_id, site center), building if needed."""
+def _get_grid(pdb_id, structure, center, extra_atoms=None):
+    """Return a cached docking grid for a site, building it if needed.
+
+    `extra_atoms` (cofactors/metals joined to the rigid receptor) is part of
+    the cache key: a grid built without a cofactor scores a different receptor
+    and must never be served to a run that asked for one.
+    """
     pid = _norm_id(pdb_id)
-    key = (pid, tuple(round(c, 1) for c in center))
+    cofactor_key = tuple(sorted(
+        (a.res_name, a.chain, a.res_seq) for a in (extra_atoms or [])
+    ))
+    key = (pid, tuple(round(c, 1) for c in center), cofactor_key)
     with _GRID_LOCK:
         grid = _GRID_CACHE.get(key)
     if grid is not None:
         return grid
-    grid = docking.build_grid(structure, center)
+    grid = docking.build_grid(structure, center, extra_atoms)
     with _GRID_LOCK:
         if len(_GRID_CACHE) >= _GRID_MAX:
             _GRID_CACHE.pop(next(iter(_GRID_CACHE)))
@@ -690,11 +700,147 @@ def run_benchmark_job(params: dict) -> dict:
     return result
 
 
+# ---------------------------------------------------------------------------
+# Interaction panels (M ligands x N targets) — see snaclex/panel.py.
+# ---------------------------------------------------------------------------
+
+def _panel_load_ligand(query):
+    """Resolve one panel ligand to 3D atoms + identity (PubChem)."""
+    compound = pubchem.lookup_compound(query)
+    if not compound.get("cid"):
+        raise FetchError(f"Could not resolve chemical '{query}'")
+    lig = pubchem.fetch_3d_atoms(compound["cid"])
+    return {
+        "atoms": lig["atoms"],
+        "source": lig["source"],
+        "cid": compound["cid"],
+        "name": compound.get("iupac_name") or query,
+        "formula": compound.get("molecular_formula"),
+    }
+
+
+def _panel_resolve_site(pdb_id, structure, target):
+    """Resolve a system target's site hint to (center, label).
+
+    Sites are addressed by the resname of a co-crystallized ligand (stable
+    across versions) or by rank in SnaCleX's own pocket detection (convenient,
+    but not guaranteed to be the catalytic site — the label says which).
+    """
+    site = target.get("site") or {}
+
+    res_name = site.get("ligand")
+    if res_name:
+        wanted = str(res_name).upper()
+        matches = [
+            c for c in structure.components if c.res_name.upper() == wanted
+        ]
+        if not matches:
+            raise ValueError(
+                f"site ligand '{wanted}' is not present in {pdb_id}; "
+                f"re-verify this system (python -m snaclex.systems verify)"
+            )
+        comp = max(matches, key=lambda c: len(c.atoms))
+        return docking.component_center(comp), f"{comp.label} site"
+
+    rank = int(site.get("pocket", 0))
+    found = _get_pockets(pdb_id)
+    if not found:
+        raise ValueError(f"No pockets detected in {pdb_id}")
+    if rank < 0 or rank >= len(found):
+        raise ValueError(f"Pocket rank {rank} out of range for {pdb_id}")
+    pocket = found[rank]
+    return (
+        tuple(pocket["center"]),
+        f"detected pocket #{pocket['index']} ({pocket['volume_A3']} Å³) "
+        f"— site not independently confirmed",
+    )
+
+
+def _panel_measured_activity(ligand, target):
+    """Best measured ChEMBL activity for one (ligand, target) cell, or None.
+
+    Putting a measurement next to each prediction is the whole point: it shows
+    at a glance where the docking agrees with experiment and where the panel is
+    extrapolating with nothing to check it against.
+    """
+    uniprot = target.get("uniprot")
+    try:
+        pharm = chembl.pharmacology(
+            ligand.get("query") or ligand["id"],
+            [uniprot] if uniprot else [],
+            target.get("title") or target.get("label") or "",
+        )
+    except FetchError:
+        return None
+    if not pharm:
+        return None
+    match = pharm.get("match") or {}
+    if match.get("level") in (None, "none"):
+        return None
+    return {
+        "source": "ChEMBL",
+        "chembl_id": pharm.get("chembl_id"),
+        "match_level": match.get("level"),
+        "target_name": match.get("target_name"),
+        "best_activity": match.get("best_activity"),
+    }
+
+
+def run_panel_job(params: dict, progress=None) -> dict:
+    """Run a ligand x target panel, from a curated system id or an explicit spec."""
+    system_doc = None
+    system_id = params.get("system")
+    if system_id:
+        system_doc = systems.load_system(clean_text(str(system_id), max_len=64))
+        targets, ligands = systems.panel_specs(
+            system_doc,
+            target_ids=params.get("target_ids"),
+            ligand_ids=params.get("ligand_ids"),
+        )
+    else:
+        targets = params.get("targets")
+        ligands = params.get("ligands")
+        if not isinstance(targets, list) or not isinstance(ligands, list):
+            raise ValueError(
+                "Need either 'system' or explicit 'targets' and 'ligands' lists"
+            )
+
+    include_measured = bool(params.get("include_measured", True))
+    result = panel.run_panel(
+        targets,
+        ligands,
+        load_structure=_load_structure,
+        load_ligand=_panel_load_ligand,
+        resolve_site=_panel_resolve_site,
+        build_grid=_get_grid,
+        measured_activity=_panel_measured_activity if include_measured else None,
+        progress=progress,
+    )
+
+    if system_doc is not None:
+        result["system"] = {
+            "id": system_doc["id"],
+            "name": system_doc["name"],
+            "version": system_doc.get("version"),
+            "description": system_doc.get("description"),
+            "intended_use": system_doc.get("intended_use"),
+            "references": system_doc.get("references"),
+            # Carried into every result so an unverified curation can never be
+            # mistaken for a checked one downstream (export, report, figure).
+            "verification": system_doc["verification"],
+        }
+    return result
+
+
 _JOB_RUNNERS = {
     "dock": run_dock_job,
     "screen": run_screen_job,
     "benchmark": run_benchmark_job,
+    "panel": run_panel_job,
 }
+
+# Job kinds whose runner takes a `progress` callback (long, multi-step work).
+_PROGRESS_JOBS = {"panel"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -845,6 +991,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_version(qs)
         if path == "/api/docs":
             return self._send_json(apidocs.contract())
+        if path == "/api/systems":
+            return self._api_systems(qs)
+        if path.startswith("/api/systems/"):
+            return self._api_system_detail(path)
         if path == "/api/benchmark/cases":
             return self._send_json({"cases": BENCHMARK_CASES})
         if path.startswith("/api/jobs/"):
@@ -903,7 +1053,9 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(params, dict):
             return self._send_error_json("'params' must be an object")
 
-        job_id = JOBS.submit(_JOB_RUNNERS[kind], params)
+        job_id = JOBS.submit(
+            _JOB_RUNNERS[kind], params, wants_progress=(kind in _PROGRESS_JOBS)
+        )
         return self._send_json({"job_id": job_id, "status": "queued"}, status=202)
 
     def _guarded_upload(self):
@@ -957,6 +1109,8 @@ class Handler(BaseHTTPRequestHandler):
         if job is None:
             return self._send_error_json("Unknown or expired job", status=404)
         out = {"job_id": job_id, "status": job["status"]}
+        if job.get("progress") is not None:
+            out["progress"] = job["progress"]
         if job["status"] == "done":
             out["result"] = job["result"]
         elif job["status"] == "error":
@@ -1084,6 +1238,18 @@ class Handler(BaseHTTPRequestHandler):
         if not query:
             return self._send_error_json("Missing 'q' parameter")
         return self._send_json({"results": rcsb.search_by_name(query, limit=10)})
+
+    def _api_systems(self, qs):
+        """Catalog of curated systems available to the panel runner."""
+        return self._send_json({"systems": systems.list_systems()})
+
+    def _api_system_detail(self, path):
+        sid = clean_text(path[len("/api/systems/"):], max_len=64)
+        try:
+            doc = systems.load_system(sid)
+        except systems.SystemError_ as exc:
+            return self._send_error_json(str(exc), status=404)
+        return self._send_json(doc)
 
     def _api_version(self, qs):
         return self._send_json({

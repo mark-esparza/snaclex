@@ -18,6 +18,9 @@ _LIMITS = {
     "max_upload_bytes": 5_000_000,
     "rate_limit": "per-IP token bucket; 429 + Retry-After when exceeded",
     "job_concurrency": "bounded worker pool; heavy work queues via /api/jobs",
+    "max_panel_targets": 16,
+    "max_panel_ligands": 24,
+    "max_panel_cells": 192,
 }
 
 _ENDPOINTS = [
@@ -63,13 +66,33 @@ _ENDPOINTS = [
     },
     {
         "method": "POST", "path": "/api/jobs",
-        "body": {"kind": "'dock' | 'screen' | 'benchmark'",
+        "body": {"kind": "'dock' | 'screen' | 'benchmark' | 'panel'",
                  "params": "kind-specific params object"},
         "returns": "202 with {job_id, status}; poll GET /api/jobs/{id}",
         "notes": "dock: {pdb, chem, comp|pocket}. screen: {pdb, chems, comp|pocket}. "
                  "benchmark: {pdb, ligand|comp} — redocks the known ligand and "
                  "reports pocket recovery, pose RMSD, interactions recovered, and "
-                 "physical plausibility.",
+                 "physical plausibility. "
+                 "panel: {system, target_ids?, ligand_ids?} or explicit "
+                 "{targets:[{id, pdb, site:{ligand|pocket}}], "
+                 "ligands:[{id, query}]}, plus include_measured (default true) "
+                 "to attach ChEMBL activity per cell — runs every ligand "
+                 "against every target and returns a per-target-normalized "
+                 "matrix. Reports incremental progress while running.",
+    },
+    {
+        "method": "GET", "path": "/api/systems",
+        "params": {},
+        "returns": "catalog of curated systems (id, name, counts, verification "
+                   "state) runnable as a panel",
+    },
+    {
+        "method": "GET", "path": "/api/systems/{id}",
+        "params": {"id": "system id from /api/systems"},
+        "returns": "full system document: targets (pdb + site hint + role), "
+                   "ligands, references, and a verification block. A system "
+                   "whose structures have not been checked against RCSB is "
+                   "flagged as a DRAFT curation.",
     },
     {
         "method": "GET", "path": "/api/benchmark/cases",

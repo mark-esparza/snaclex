@@ -63,6 +63,43 @@ class TestJobManager(unittest.TestCase):
         snap["status"] = "tampered"
         self.assertEqual(jm.status(jid)["status"], "done")
 
+    def test_progress_is_absent_until_reported(self):
+        jm = JobManager(max_workers=1)
+        self.addCleanup(jm.shutdown)
+        jid = jm.submit(lambda: 1)
+        _wait(jm, jid)
+        self.assertIsNone(jm.status(jid)["progress"])
+
+    def test_wants_progress_injects_a_reporter(self):
+        jm = JobManager(max_workers=1)
+        self.addCleanup(jm.shutdown)
+
+        def work(progress=None):
+            progress(3, 4, "three of four")
+            return "ok"
+
+        jid = jm.submit(work, wants_progress=True)
+        _wait(jm, jid)
+        st = jm.status(jid)
+        self.assertEqual(st["result"], "ok")
+        self.assertEqual(st["progress"]["done"], 3)
+        self.assertEqual(st["progress"]["total"], 4)
+        self.assertEqual(st["progress"]["percent"], 75.0)
+        self.assertEqual(st["progress"]["label"], "three of four")
+
+    def test_progress_reporter_tolerates_zero_total(self):
+        jm = JobManager(max_workers=1)
+        self.addCleanup(jm.shutdown)
+        jid = jm.submit(lambda: 1)
+        _wait(jm, jid)
+        jm.progress_reporter(jid)(0, 0, None)
+        self.assertIsNone(jm.status(jid)["progress"]["percent"])
+
+    def test_progress_reporter_for_a_gone_job_is_a_no_op(self):
+        jm = JobManager(max_workers=1)
+        self.addCleanup(jm.shutdown)
+        jm.progress_reporter("does-not-exist")(1, 2, "x")  # must not raise
+
     def test_finished_jobs_are_gc_d_after_ttl(self):
         clock = FakeClock()
         jm = JobManager(max_workers=1, ttl_seconds=100, time_fn=clock)

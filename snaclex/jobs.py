@@ -35,7 +35,13 @@ class JobManager:
         self._ttl = ttl_seconds
         self._time = time_fn
 
-    def submit(self, fn, *args, **kwargs) -> str:
+    def submit(self, fn, *args, wants_progress=False, **kwargs) -> str:
+        """Queue ``fn(*args, **kwargs)`` and return its job id.
+
+        With ``wants_progress=True`` the callable also receives a ``progress``
+        keyword bound to this job, so it can report step-by-step completion
+        (see :meth:`progress_reporter`).
+        """
         job_id = uuid.uuid4().hex
         now = self._time()
         with self._lock:
@@ -43,12 +49,34 @@ class JobManager:
                 "status": "queued",
                 "result": None,
                 "error": None,
+                "progress": None,
                 "created": now,
                 "updated": now,
             }
+        if wants_progress:
+            kwargs = dict(kwargs, progress=self.progress_reporter(job_id))
         self._executor.submit(self._run, job_id, fn, args, kwargs)
         self._gc()
         return job_id
+
+    def progress_reporter(self, job_id):
+        """Return a ``(done, total, label)`` callback that updates one job.
+
+        Long multi-step jobs (interaction panels in particular) run for minutes;
+        without this the client can only see "running" and cannot tell a slow
+        job from a wedged one. The callback is a no-op once the job is gone.
+        """
+        def report(done, total, label=None):
+            self._set(
+                job_id,
+                progress={
+                    "done": done,
+                    "total": total,
+                    "percent": round(100.0 * done / total, 1) if total else None,
+                    "label": label,
+                },
+            )
+        return report
 
     def status(self, job_id: str):
         """Return a copy of the job's status dict, or None if unknown/expired."""

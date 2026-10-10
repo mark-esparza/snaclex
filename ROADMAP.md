@@ -205,6 +205,45 @@ screen reader._
 
 ---
 
+## Phase 7 — Systems-level panels (new scope, beyond the original audit) — 🟡 foundation done
+
+The audit and Phases 0–6 all assume a *one structure, one site* workbench.
+Physiological questions are **matrix** questions: M metabolites against N
+enzymes/receptors. Phase 7 adds that axis.
+
+- [x] **Panel engine** (`snaclex/panel.py`, job kind `panel`) — every ligand
+  docked into every target in one run; one grid per target reused across all
+  ligands; per-cell failures degrade instead of aborting; progress reported
+  while running.
+- [x] **Per-target normalization** — raw scores are not comparable across
+  targets, so ligand efficiency is standardized per target column and only
+  standardized values are compared across a ligand's row (`selectivity_gap`).
+- [x] **Measured activity per cell** — optional ChEMBL lookup so each predicted
+  pair sits next to its experimental evidence, where any exists.
+- [x] **Curated systems** (`snaclex/systems.py`, `data/systems/*.json`,
+  `GET /api/systems`) with **verification as a first-class field**: targets are
+  `verified: false` until checked against RCSB, and the DRAFT flag rides on
+  every response. Ships a catecholamine system (12 x 12) with positive controls.
+- [x] **Cofactors in the scoring grid** (`docking.build_grid(extra_atoms=)`) —
+  fixes cofactor-dependent sites being scored as empty cavities.
+- [x] **Site-shell receptor retention** — panels keep whole residues within
+  `GRID_HALF + 12 Å` instead of whole assemblies; proven exact by test.
+- [ ] **Panel UI** — a matrix/heatmap tab (the engine and API are done; the
+  front end still only exposes single-site analysis and batch screening).
+- [ ] **Verify the shipped curation** — needs network access to RCSB; the
+  session that authored it had egress blocked, so it ships as a draft.
+- [ ] **Positive-control reporting** — surface "did the known inhibitor top its
+  target's column?" as a headline panel metric, not just a curator note.
+- [ ] **Rungs 1–3** of `docs/systems-pharmacology.md` — protonation/tautomers,
+  ligand flexibility, calibration against measured affinity (report Spearman,
+  not just rank), then a reaction-network layer. Rungs 4–5 (kinetics,
+  physiology) should interoperate via SBML, not be reimplemented here.
+
+See **[docs/systems-pharmacology.md](docs/systems-pharmacology.md)** for what a
+panel can and cannot answer and what each further rung requires.
+
+---
+
 ## Priority summary
 
 | Phase | Theme | Audit priority | Effort | New deps? |
@@ -216,6 +255,7 @@ screen reader._
 | 4 | Docking benchmarks + Vina/GNINA | MEDIUM | L | opt: vina/gnina/rdkit |
 | 5 | Accessibility & onboarding | MEDIUM | S–M | none |
 | 6 | API docs + structure upload | MEDIUM→LOWER | M–L | none |
+| 7 | Systems-level panels | (new scope) | L | none |
 
 **Recommended sequence:** Phase 0 → 1 → 2 in order (each is low-risk, high-value,
 and dependency-free), then 3, then pick up 4/5/6 in parallel. Phases 0–2 and 5

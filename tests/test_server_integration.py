@@ -269,6 +269,152 @@ class TestServerIntegration(unittest.TestCase):
             else:
                 self.fail("benchmark job did not finish")
 
+    # ---- curated systems + interaction panels --------------------------
+
+    def test_systems_catalog_lists_curated_systems(self):
+        resp, body = self._get("/api/systems")
+        self.assertEqual(resp.status, 200)
+        catalog = json.loads(body)["systems"]
+        self.assertTrue(catalog)
+        ids = {entry["id"] for entry in catalog}
+        self.assertIn("catecholamine", ids)
+
+    def test_systems_catalog_exposes_verification_state(self):
+        resp, body = self._get("/api/systems")
+        for entry in json.loads(body)["systems"]:
+            self.assertIn("fully_verified", entry["verification"])
+
+    def test_system_detail_returns_targets_and_ligands(self):
+        resp, body = self._get("/api/systems/catecholamine")
+        self.assertEqual(resp.status, 200)
+        doc = json.loads(body)
+        self.assertTrue(doc["targets"])
+        self.assertTrue(doc["ligands"])
+        self.assertIn("verification", doc)
+
+    def test_unknown_system_404(self):
+        resp, _ = self._get("/api/systems/not-a-system")
+        self.assertEqual(resp.status, 404)
+
+    def test_system_detail_rejects_path_traversal(self):
+        resp, _ = self._get("/api/systems/..%2F..%2Fserver")
+        self.assertEqual(resp.status, 404)
+
+    def test_panel_job_runs_and_reports_progress(self):
+        """A two-target x two-ligand panel end to end, with fakes for I/O."""
+        s = self._structure_with_ligand()
+        meta = {"pdb_id": "1PNL", "title": "Panel case"}
+
+        def fake_ligand(query):
+            return {
+                "atoms": [{"element": "C", "x": 0.0, "y": 0.0, "z": 0.0},
+                          {"element": "O", "x": 1.4, "y": 0.0, "z": 0.0}],
+                "source": "3d", "cid": 1, "name": query, "formula": "CO",
+            }
+
+        params = {
+            "targets": [{"id": "t1", "pdb": "1PNL", "site": {"ligand": "LIG"}},
+                        {"id": "t2", "pdb": "1PNL", "site": {"ligand": "LIG"}}],
+            "ligands": [{"id": "a", "query": "alpha"},
+                        {"id": "b", "query": "beta"}],
+            "include_measured": False,
+        }
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_panel_load_ligand", fake_ligand):
+            resp, body = self._post("/api/jobs",
+                                    {"kind": "panel", "params": params})
+            self.assertEqual(resp.status, 202)
+            job_id = json.loads(body)["job_id"]
+            saw_progress = False
+            for _ in range(400):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st.get("progress"):
+                    saw_progress = True
+                if st["status"] == "done":
+                    res = st["result"]
+                    self.assertEqual(res["n_cells"], 4)
+                    self.assertEqual(res["n_scored"], 4)
+                    self.assertIn("normalization", res)
+                    self.assertIn("selectivity", res)
+                    self.assertIn("limitations", res["methods"])
+                    break
+                if st["status"] == "error":
+                    self.fail(f"panel job errored: {st['error']}")
+                time.sleep(0.02)
+            else:
+                self.fail("panel job did not finish")
+        self.assertTrue(saw_progress, "panel job never reported progress")
+
+    def test_panel_job_from_a_curated_system_carries_verification(self):
+        """A panel run from a draft system must say so in its own result."""
+        s = self._structure_with_ligand()
+        meta = {"pdb_id": "1PNL", "title": "Panel case"}
+
+        def fake_ligand(query):
+            return {"atoms": [{"element": "C", "x": 0.0, "y": 0.0, "z": 0.0}],
+                    "source": "3d", "cid": 1, "name": query, "formula": "C"}
+
+        params = {
+            "system": "catecholamine",
+            "target_ids": ["MAOB"],
+            "ligand_ids": ["dopamine"],
+            "include_measured": False,
+        }
+        with mock.patch.object(server, "_load_structure",
+                               return_value=("ATOMS", s, meta)), \
+             mock.patch.object(server, "_panel_load_ligand", fake_ligand), \
+             mock.patch.object(server, "_panel_resolve_site",
+                               lambda p, st, t: ((0.0, 0.0, 0.0), "test site")):
+            resp, body = self._post("/api/jobs",
+                                    {"kind": "panel", "params": params})
+            job_id = json.loads(body)["job_id"]
+            for _ in range(400):
+                _r, b = self._get(f"/api/jobs/{job_id}")
+                st = json.loads(b)
+                if st["status"] == "done":
+                    verification = st["result"]["system"]["verification"]
+                    self.assertFalse(verification["fully_verified"])
+                    self.assertIn("DRAFT", verification["note"])
+                    break
+                if st["status"] == "error":
+                    self.fail(f"panel job errored: {st['error']}")
+                time.sleep(0.02)
+            else:
+                self.fail("panel job did not finish")
+
+    def test_grid_cache_distinguishes_cofactor_variants(self):
+        """A cofactor-free grid must never be reused for a cofactor run."""
+        from tests.fixtures import atom
+        s = self._structure_with_ligand()
+        cofactor = [atom("N", 1.0, 1.0, 0.0, hetero=True, res_name="FAD",
+                         chain="B", res_seq=500)]
+        server._GRID_CACHE.clear()
+        bare = server._get_grid("1GRD", s, (0.0, 0.0, 0.0))
+        with_cof = server._get_grid("1GRD", s, (0.0, 0.0, 0.0), cofactor)
+        self.assertIsNot(bare, with_cof)
+        self.assertEqual(len(server._GRID_CACHE), 2)
+        # Same inputs still hit the cache.
+        self.assertIs(with_cof,
+                      server._get_grid("1GRD", s, (0.0, 0.0, 0.0), cofactor))
+        server._GRID_CACHE.clear()
+
+    def test_panel_job_rejects_a_spec_with_neither_system_nor_targets(self):
+        resp, body = self._post("/api/jobs", {"kind": "panel", "params": {}})
+        job_id = json.loads(body)["job_id"]
+        for _ in range(200):
+            _r, b = self._get(f"/api/jobs/{job_id}")
+            st = json.loads(b)
+            if st["status"] == "error":
+                self.assertIn("system", st["error"])
+                break
+            if st["status"] == "done":
+                self.fail("expected an error for an empty panel spec")
+            time.sleep(0.02)
+        else:
+            self.fail("panel job did not finish")
+
 
 def _pdb_line(rec, serial, name, res, chain, seq, x, y, z, el):
     return (f"{rec:<6}{serial:>5} {name:<4} {res:>3} {chain}{seq:>4}    "
