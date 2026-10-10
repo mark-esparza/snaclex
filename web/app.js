@@ -69,9 +69,12 @@ function setStatus(msg, kind) {
   bar.innerHTML = kind === "busy" ? `<span class="spinner"></span>${msg}` : msg;
 }
 function switchTab(name) {
-  document.querySelectorAll(".tab").forEach((t) =>
-    t.classList.toggle("active", t.dataset.tab === name)
-  );
+  document.querySelectorAll(".tab").forEach((t) => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-current", on ? "page" : "false");
+    if (on) setCrumb(null, t.textContent.trim());
+  });
   document.querySelectorAll(".panel").forEach((p) =>
     p.classList.toggle("active", p.dataset.panel === name)
   );
@@ -82,6 +85,20 @@ function switchTab(name) {
     }, 30);
   }
   if (name === "report") compileReport();
+}
+
+// Breadcrumb. Decorative chrome would be dishonest here, so it tracks what is
+// actually loaded and which section is showing; either argument may be null to
+// leave that crumb alone.
+function setCrumb(structure, section) {
+  if (structure !== null && structure !== undefined) {
+    const e = document.getElementById("crumbStructure");
+    if (e) e.textContent = structure;
+  }
+  if (section !== null && section !== undefined) {
+    const e = document.getElementById("crumbSection");
+    if (e) e.textContent = section;
+  }
 }
 
 async function getJSON(url) {
@@ -200,6 +217,10 @@ function renderChainPicker(pdbId, data) {
 // Populate state + render from an analyze/upload response. Shared by RCSB loads
 // and local uploads so both paths behave identically.
 function applyStructure(id, data) {
+  setCrumb(
+    [id, (data.metadata && data.metadata.title) || ""].filter(Boolean).join(" — "),
+    null
+  );
   state.pdbId = id;
   state.pdbData = data.pdb_data;
   state.meta = data.metadata;
@@ -2435,19 +2456,18 @@ function init() {
   if (location.search.includes("pdb=")) applyURLState();
 }
 
-// Taskbar tray clock. Decorative chrome, so it must never be able to break the
-// app: the element is optional and the interval is only armed if it exists.
+// Footer page stamp — the "this page was generated at" line such sites always
+// carried. Decorative, so it must never be able to break the app: the element
+// is optional and nothing is scheduled.
 function startTrayClock() {
   const el = document.getElementById("trayClock");
   if (!el) return;
-  const tick = () => {
-    el.textContent = new Date().toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-  tick();
-  setInterval(tick, 15000);
+  const now = new Date();
+  el.textContent =
+    "Page generated " +
+    now.toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" }) +
+    " at " +
+    now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 document.addEventListener("DOMContentLoaded", init);

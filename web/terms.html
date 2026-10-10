@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="subpage">
+  <a class="skip-link" href="#maincontent">Skip to main content</a>
   <header class="topbar">
     <div class="brand">
       <span class="logo">⬡</span>
@@ -18,7 +19,20 @@
     <div class="research-badge">RESEARCH ONLY · not for clinical use</div>
   </header>
 
-  <main class="policy">
+  <nav class="sitenav" aria-label="Site">
+    <a href="/">Workbench</a>
+    <a href="/api.html">API Reference</a>
+    <a href="https://www.rcsb.org/" rel="noopener noreferrer">RCSB PDB</a>
+    <a href="https://pubchem.ncbi.nlm.nih.gov/" rel="noopener noreferrer">PubChem</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="/terms.html" class="here">Terms</a>
+  </nav>
+
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="/">Home</a> <span aria-hidden="true">›</span> <span>Terms of Use</span>
+  </nav>
+
+  <main class="policy" id="maincontent">
     <p class="policy-updated">Last updated: 2026-06-13</p>
 
     <h2>Research use only</h2>

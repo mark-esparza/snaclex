@@ -1,6 +1,11 @@
 /* =============================================================================
    SnaCleX — "Luna Lab" theme
-   A Windows XP / late-90s scientific-workstation skin.
+   A late-90s / early-2000s public research-site skin (NCBI/PubMed era):
+   masthead band, site nav strip, breadcrumb, boxed sidebar, agency footer.
+   Widgets keep the XP vocabulary — Tahoma, 3D-beveled controls, sunken fields —
+   because that is what a form on such a site actually looked like. The page
+   architecture is a *document*, not an application window: one chrome layer,
+   not a window frame wrapped around a tab control.
 
    Constraints this theme is built under (see server.py `_CSP`):
      * font-src 'self'  -> no webfonts. Tahoma/MS Sans Serif are the period-
@@ -23,8 +28,11 @@
   --luna-tint: #d6e5f5;     /* pale blue panel tint                         */
   --luna-tint2: #eef4fc;
   --select: #316ac5;        /* XP list selection                            */
-  --desktop-a: #5a8bb0;     /* desktop gradient                             */
-  --desktop-b: #1d4a6b;
+  --paper: #ffffff;         /* page background                              */
+  --band: #15428b;          /* masthead band                                */
+  --band-lo: #0d2f66;
+  --nav: #4a76b8;           /* site-nav strip                               */
+  --rule: #9aa7bd;          /* hairline rules between bands                 */
 
   /* --- text ------------------------------------------------------------- */
   --text: #000000;
@@ -48,12 +56,6 @@
 
 * { box-sizing: border-box; }
 
-/* 3D bevels, the load-bearing idiom of the whole era. */
-@media (min-width: 0px) {
-  .raised { border: 2px solid; border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi); }
-  .sunken { border: 2px solid; border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2); }
-}
-
 body {
   margin: 0;
   font-family: var(--ui);
@@ -61,22 +63,29 @@ body {
   line-height: 1.45;
   color: var(--text);
   min-height: 100vh;
-  /* The desktop behind the application window. */
-  background: linear-gradient(170deg, var(--desktop-a) 0%, var(--desktop-b) 100%) fixed;
-  padding: 0 0 34px;        /* room for the taskbar */
-  /* Column layout so the window stretches to the taskbar instead of leaving
-     a slab of bare desktop under a short page. */
+  background: var(--paper);
   display: flex;
   flex-direction: column;
 }
-/* Every piece of window chrome shares one width, leaving a desktop gutter. */
-.topbar, .menubar, .layout, .policy {
-  width: min(1500px, calc(100% - 24px));
-  margin-left: auto;
-  margin-right: auto;
+/* One shared measure for every band: the bands bleed full width, their
+   contents sit in a centred column. A padding gutter does this without
+   wrapping each band in an extra div. */
+.topbar, .sitenav, .crumb, .layout, .sitefoot {
+  padding-inline: max(14px, calc((100% - 1460px) / 2));
 }
-.policy { width: min(820px, calc(100% - 24px)); }
-.layout, .policy { flex: 1 0 auto; }
+.policy { padding-inline: max(20px, calc((100% - 860px) / 2)); }
+.subpage .topbar, .subpage .sitenav, .subpage .crumb, .subpage .sitefoot {
+  padding-inline: max(14px, calc((100% - 880px) / 2));
+}
+.layout, .policy { flex: 1 0 auto; width: 100%; }
+
+/* Period-correct and genuinely useful: the first thing in the tab order. */
+.skip-link {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: #fffbe8; color: #00247d; font-weight: 700;
+  padding: 7px 14px; border: 2px solid var(--luna);
+}
+.skip-link:focus { left: 8px; top: 8px; }
 
 /* =============================================================================
    Window frame
@@ -86,72 +95,45 @@ body {
    ========================================================================== */
 
 .topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 6px 5px 7px;
-  margin: 10px auto 0;
-  max-width: 1500px;
-  border: 3px solid var(--luna);
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  background:
-    linear-gradient(180deg,
-      #0e7cf0 0%, #0a5fe0 9%, #0a56d6 18%, #0a56d6 82%,
-      #0b60e4 92%, #1d7df2 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
-  position: sticky;
-  top: 0;
-  z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  padding-block: 10px;
+  background: linear-gradient(180deg, #2a5ea6 0%, var(--band) 45%, var(--band-lo) 100%);
+  border-bottom: 3px solid #d9a100;   /* the obligatory institutional accent rule */
 }
 
-.brand { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 /* Caption icon, drawn as a beveled tile. */
 .logo {
   flex: none;
-  width: 24px; height: 24px;
+  width: 34px; height: 34px;
   display: grid; place-items: center;
-  font-size: 15px; line-height: 1;
-  color: #0a3f9e;
-  background: linear-gradient(180deg, #fdfdf8, #ddd8c4);
-  border: 1px solid #0a3f9e;
-  border-radius: 3px;
-  box-shadow: inset 1px 1px 0 #fff, 0 1px 1px rgba(0, 0, 0, 0.35);
+  font-size: 20px; line-height: 1;
+  color: #15428b;
+  background: linear-gradient(180deg, #ffffff, #dfe7f3);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 14px;
+  font-size: 19px;
   font-weight: 700;
   color: #fff;
-  letter-spacing: 0.2px;
-  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.55);
+  letter-spacing: 0.3px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
 }
 .tagline {
-  margin: 0;
-  font-size: 11px;
-  color: #d8e6fb;
-  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.4);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin: 1px 0 0;
+  font-size: 11.5px;
+  color: #e4edfb;
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.35);
 }
 
 /* Decorative caption buttons. Purely chrome — there is no window to close —
    so they are drawn in CSS and never exposed to assistive tech. */
-.topbar::after {
-  content: "";
-  flex: none;
-  width: 70px; height: 22px;
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23f4a28c'/%3E%3Cstop offset='.5' stop-color='%23d8482a'/%3E%3Cstop offset='1' stop-color='%23b5321a'/%3E%3C/linearGradient%3E%3Crect x='.5' y='.5' width='21' height='21' rx='3' fill='url(%23g)' stroke='%238d2614'/%3E%3Cpath d='M7.5 7.5 L14.5 14.5 M14.5 7.5 L7.5 14.5' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E")
-      no-repeat right 0 top 0,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%236fb2fa'/%3E%3Cstop offset='.5' stop-color='%231f63d8'/%3E%3Cstop offset='1' stop-color='%231247a8'/%3E%3C/linearGradient%3E%3Crect x='.5' y='.5' width='21' height='21' rx='3' fill='url(%23g)' stroke='%230b3da3'/%3E%3Crect x='6' y='6' width='10' height='9.5' fill='none' stroke='%23fff' stroke-width='1.6'/%3E%3Crect x='6' y='6' width='10' height='3' fill='%23fff'/%3E%3C/svg%3E")
-      no-repeat right 24px top 0,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%236fb2fa'/%3E%3Cstop offset='.5' stop-color='%231f63d8'/%3E%3Cstop offset='1' stop-color='%231247a8'/%3E%3C/linearGradient%3E%3Crect x='.5' y='.5' width='21' height='21' rx='3' fill='url(%23g)' stroke='%230b3da3'/%3E%3Crect x='6' y='13.5' width='10' height='3' fill='%23fff'/%3E%3C/svg%3E")
-      no-repeat right 48px top 0;
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
-}
+/* (The caption buttons are gone: this is a site masthead, not a window.) */
 
 .research-badge {
   font-size: 10px;
@@ -165,21 +147,32 @@ body {
   white-space: nowrap;
 }
 
-/* ---- menu bar (decorative chrome; real controls live in the panels) ---- */
-.menubar {
-  max-width: 1500px;
-  margin: 0 auto;
-  border-left: 3px solid var(--luna);
-  border-right: 3px solid var(--luna);
-  background: linear-gradient(180deg, #faf9f3 0%, var(--face) 60%, #e3dfcc 100%);
-  padding: 2px 6px;
-  display: flex;
-  gap: 2px;
-  font-size: 12px;
+/* ---- site nav strip: real links, the way such a site actually worked ---- */
+.sitenav {
+  display: flex; flex-wrap: wrap; gap: 0;
+  background: linear-gradient(180deg, #6b93cf 0%, var(--nav) 55%, #3c66a6 100%);
+  border-bottom: 1px solid var(--band-lo);
 }
-.menubar span { padding: 2px 9px; color: #1a1a1a; cursor: default; border: 1px solid transparent; }
-.menubar span:hover { background: var(--select); color: #fff; border-color: #16407c; }
-.menubar u { text-decoration: underline; }
+.sitenav a {
+  color: #fff; text-decoration: none; font-size: 12px; font-weight: 700;
+  padding: 5px 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.35);
+}
+.sitenav a:first-child { border-left: 1px solid rgba(255, 255, 255, 0.3); }
+.sitenav a:hover { background: rgba(255, 255, 255, 0.22); text-decoration: underline; }
+.sitenav a.here { background: var(--face); color: #15428b; text-shadow: none; }
+
+/* ---- breadcrumb: where you are, the period's favourite affordance ---- */
+.crumb {
+  padding-block: 5px;
+  background: var(--face);
+  border-bottom: 1px solid var(--rule);
+  font-size: 11.5px; color: var(--muted);
+}
+.crumb a { color: var(--ink); }
+.crumb span[aria-hidden] { color: #9a968a; margin: 0 2px; }
+#crumbSection { font-weight: 700; color: #1f1f1f; }
 
 /* =============================================================================
    Client area
@@ -187,16 +180,10 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 286px 1fr;
-  gap: 10px;
-  padding: 10px;
-  max-width: 1500px;
-  margin: 0 auto;
-  background: var(--face);
-  border: 3px solid var(--luna);
-  border-top: none;
-  border-radius: 0 0 8px 8px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.42);
+  grid-template-columns: 268px 1fr;
+  gap: 18px;
+  padding-block: 16px 28px;
+  background: var(--paper);
 }
 @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
 
@@ -205,8 +192,7 @@ body {
 /* ---- Explorer-bar style task panels (the XP blue side panes) ---- */
 .card {
   background: var(--luna-tint2);
-  border: 1px solid #a8c0e0;
-  border-radius: 4px;
+  border: 1px solid var(--rule);
   padding: 0 0 11px;
   overflow: hidden;
 }
@@ -214,13 +200,13 @@ body {
   margin: 0 0 10px;
   font-size: 11.5px;
   font-weight: 700;
-  color: #15428b;
-  letter-spacing: 0.2px;
+  color: #fff;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
-  padding: 6px 10px;
-  background: linear-gradient(180deg, #f0f6ff 0%, #cfe0f7 48%, #bed5f3 100%);
-  border-bottom: 1px solid #a8c0e0;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.75);
+  padding: 5px 10px;
+  background: linear-gradient(180deg, #5c86c4 0%, #39629f 100%);
+  border-bottom: 1px solid var(--band-lo);
+  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.35);
 }
 .card > *:not(h2) { margin-left: 11px; margin-right: 11px; }
 
@@ -287,8 +273,7 @@ button:disabled {
   margin-top: 9px;
   display: flex; flex-direction: column; gap: 0;
   background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
   max-height: 260px; overflow: auto;
 }
 .search-results .sr {
@@ -340,39 +325,37 @@ button:disabled {
 }
 
 .tabs {
-  display: flex; flex-wrap: wrap; gap: 2px;
-  padding: 3px 4px 0;
-  border-bottom: 1px solid #8a8678;
-  background: transparent;
+  display: flex; flex-wrap: wrap; gap: 0;
+  padding: 0;
+  background: var(--face);
+  border: 1px solid var(--rule);
+  border-bottom: 2px solid var(--band);
 }
 .tab {
-  position: relative; bottom: -1px;
-  background: linear-gradient(180deg, #f6f4ea 0%, #e4e0ce 100%);
-  border: 1px solid #8a8678;
-  border-bottom-color: #8a8678;
-  border-radius: 4px 4px 0 0;
-  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.8);
-  color: #2b2b2b;
-  padding: 5px 13px 6px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid #cdc8b6;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ink);
+  padding: 6px 14px;
   font-size: 12px;
 }
-.tab:hover { background: linear-gradient(180deg, #fffdf1, #efebd9); color: #000; border-color: #d08a21; }
-.tab:active { padding: 5px 13px 6px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.8); }
+.tab:hover { background: #fffdf1; color: #000; text-decoration: underline; }
+.tab:active { padding: 6px 14px; box-shadow: none; }
 .tab.active {
-  background: linear-gradient(180deg, #ffffff 0%, var(--face) 100%);
-  border-bottom-color: var(--face);
+  background: var(--band);
+  color: #fff;
   font-weight: 700;
-  padding: 7px 14px 7px;
-  z-index: 1;
 }
+.tab.active:hover { background: var(--band); color: #fff; text-decoration: none; }
 
 /* ---- status bar: sunken, with a grip ---- */
 .status-bar {
   font-size: 11.5px; color: #1f1f1f;
-  padding: 4px 9px;
-  background: var(--face);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  padding: 5px 10px;
+  background: var(--luna-tint2);
+  border: 1px solid var(--rule);
   border-top: none;
   display: flex; align-items: center; gap: 7px;
 }
@@ -390,11 +373,8 @@ button:disabled {
 /* ---- panel = the tab body, a raised client surface ---- */
 .panel {
   display: none; flex: 1; overflow: auto;
-  padding: 14px;
-  background: var(--face);
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
-  border-top: none;
+  padding: 16px 2px 4px;
+  background: var(--paper);
 }
 .panel.active { display: block; }
 .panel[data-panel="viewer"] { padding: 0; display: none; }
@@ -402,10 +382,9 @@ button:disabled {
 
 .empty {
   color: var(--muted); font-size: 12.5px; text-align: center;
-  padding: 54px 20px; margin: 0;
-  background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  padding: 48px 20px; margin: 0;
+  background: #fbfaf5;
+  border: 1px dashed var(--face-lo);
 }
 
 /* =============================================================================
@@ -414,8 +393,7 @@ button:disabled {
 .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 .meta-cell {
   background: var(--field); padding: 8px 10px;
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
 }
 .meta-cell .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .meta-cell .v { font-size: 13.5px; margin-top: 3px; word-break: break-word; }
@@ -439,8 +417,7 @@ button:disabled {
 .viewer3d {
   position: relative; flex: 1; min-height: 560px;
   background: #fff;
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
   margin: 6px;
 }
 
@@ -451,8 +428,7 @@ button:disabled {
 .count-chip {
   padding: 7px 12px; min-width: 88px; text-align: center;
   background: linear-gradient(180deg, #fff, var(--luna-tint2));
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .count-chip .n { font-size: 20px; font-weight: 700; color: #0a3f9e; font-family: var(--mono); }
 .count-chip .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
@@ -492,8 +468,7 @@ table.data tr:hover td { background: var(--luna-tint); }
 .ix-chip:hover { border-color: #3a6ea5; }
 .diagram-wrap {
   background: var(--field); padding: 6px; margin: 4px 0 8px;
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
 }
 .interaction-diagram { width: 100%; height: auto; display: block; }
 .interaction-diagram .ix-chip:hover rect { fill: var(--luna-tint); stroke: #3a6ea5; }
@@ -508,8 +483,7 @@ table.data tr:hover td { background: var(--luna-tint); }
 .pocket-list { display: flex; flex-direction: column; gap: 7px; }
 .pocket-card {
   padding: 10px; background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .pocket-card.active { background: var(--luna-tint2); border-color: #3a6ea5; box-shadow: inset 0 0 0 1px #3a6ea5; }
 .pocket-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -532,8 +506,7 @@ table.data tr:hover td { background: var(--luna-tint); }
 .scorebar {
   height: 14px; min-width: 90px; flex: 1; max-width: 160px; overflow: hidden;
   background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
   padding: 1px;
 }
 .scorebar > i {
@@ -556,16 +529,14 @@ table.data tr:hover td { background: var(--luna-tint); }
 .dock-row > div { flex: 1; min-width: 190px; }
 .dock-pocket {
   padding: 4px 6px; font-size: 12px; color: var(--muted); background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
 }
 .dock-pocket.set { color: #06245c; font-weight: 700; }
 .score-banner { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .score-box {
   padding: 9px 14px;
   background: linear-gradient(180deg, #fff, var(--luna-tint2));
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .score-box .n { font-size: 21px; font-weight: 700; color: #0a3f9e; font-family: var(--mono); }
 .score-box .l { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
@@ -575,8 +546,7 @@ table.data tr:hover td { background: var(--luna-tint); }
 .methods {
   margin-top: 18px; padding: 0 10px;
   background: var(--face);
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .methods > summary {
   cursor: pointer; padding: 7px 2px; font-weight: 700; font-size: 11px;
@@ -603,8 +573,7 @@ table.data tr:hover td { background: var(--luna-tint); }
    period-appropriate warning-dialog treatment. */
 .verify-banner {
   padding: 9px 11px; margin: 0 0 12px; font-size: 12px; line-height: 1.5;
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .verify-banner.warn { background: linear-gradient(180deg, #fffbe8, #fff3c4); border-left: 5px solid #c08a00; }
 .verify-banner.ok { background: linear-gradient(180deg, #f1faf1, #e3f3e3); border-left: 5px solid var(--ok); }
@@ -615,8 +584,7 @@ table.data tr:hover td { background: var(--luna-tint); }
 .panel-matrix-wrap {
   overflow: auto; max-width: 100%; margin-top: 4px;
   background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
 }
 table.panel-matrix { border-collapse: separate; border-spacing: 2px; font-size: 11.5px; margin: 0; }
 table.panel-matrix th, table.panel-matrix td { border: none; }
@@ -693,8 +661,7 @@ table.panel-matrix th, table.panel-matrix td { border: none; }
 .panel-detail {
   margin-top: 14px; padding: 10px 12px;
   background: var(--luna-tint2);
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
   border-left: 4px solid var(--luna);
 }
 
@@ -710,8 +677,7 @@ table.panel-matrix th, table.panel-matrix td { border: none; }
 .chem-head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .chem-img {
   background: #fff; padding: 6px; width: 200px; height: 200px; object-fit: contain;
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
 }
 .chem-info { flex: 1; min-width: 230px; }
 .chem-info h3 { margin: 0 0 3px; font-size: 15px; }
@@ -743,8 +709,7 @@ a.ext, .policy a, .sitefoot a { color: var(--ink); }
 .report-summary {
   font-size: 13px; line-height: 1.6; padding: 12px;
   background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-lo2) var(--face-hi) var(--face-hi) var(--face-lo2);
+  border: 1px solid var(--rule);
 }
 .hyp-list { margin: 12px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
 .hyp-list li {
@@ -776,8 +741,7 @@ a.ext, .policy a, .sitefoot a { color: var(--ink); }
    ========================================================================== */
 .bench-card {
   padding: 12px 14px; max-width: 640px; background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .bench-head { font-size: 14px; font-weight: 700; margin-bottom: 8px; color: #0a3f9e; }
 .bench-head .muted { font-weight: 400; font-size: 11.5px; margin-top: 2px; color: var(--muted); }
@@ -804,52 +768,38 @@ a.ext, .policy a, .sitefoot a { color: var(--ink); }
 #uploadInput { display: none; }
 
 /* =============================================================================
-   Taskbar (site footer)
+   Site footer — the agency block every such site ended with
    ========================================================================== */
 .sitefoot {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  height: 34px; padding: 0 0 0 0; margin: 0;
-  font-size: 11.5px; color: #fff;
-  background: linear-gradient(180deg, #3f8cf3 0%, #1e63df 9%, #1655d0 18%, #1450cb 88%, #2a74e8 100%);
-  border-top: 1px solid #0b3da3;
-  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.4);
+  margin-top: 10px;
+  padding-block: 0 26px;
+  background: var(--face);
+  border-top: 3px solid var(--band);
+  font-size: 11.5px; color: var(--muted);
 }
-/* The "Start" button — carries the research-only warning, which is the one
-   thing on this page that must never be missed. */
-.sitefoot > span:first-child {
-  display: inline-flex; align-items: center; height: 100%;
-  padding: 0 22px 0 14px; font-weight: 700; font-size: 11.5px;
-  color: #fff; text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
-  background: linear-gradient(180deg, #37912b 0%, #237215 42%, #1b5f12 60%, #2d8020 100%);
-  border-right: 1px solid #10400a;
-  border-radius: 0 10px 10px 0;
-}
+.foot-rule { height: 0; }
 .sitefoot-nav {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  height: 100%; margin-right: 6px; padding: 0 10px;
-  background: linear-gradient(180deg, #1a5fd8, #1c68e4);
-  border-left: 1px solid #0b3da3;
-  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.25);
+  display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+  padding: 11px 0 9px;
+  font-size: 12px; color: #9a968a;
 }
-.sitefoot a { color: #fff; text-decoration: none; padding: 2px 6px; border: 1px solid transparent; }
-.sitefoot a:hover { background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.45); }
-.sitefoot .muted { color: #ddeaff; }
-.sitefoot .clock {
-  font-variant-numeric: tabular-nums;
-  padding-left: 10px; border-left: 1px solid rgba(255, 255, 255, 0.3);
-  color: #fff;
+.sitefoot a { color: var(--ink); text-decoration: underline; }
+.sitefoot a:hover { color: #0a3f9e; background: #fffbe8; }
+.foot-disclaim {
+  margin: 0 0 9px; padding: 9px 11px;
+  background: #fffbe8; border: 1px solid #d9b94a;
+  font-size: 11.5px; line-height: 1.5; color: #3a2a00; max-width: 980px;
 }
+.foot-disclaim b { color: #7a1f1f; }
+.foot-meta { margin: 0; font-size: 11px; line-height: 1.6; color: var(--muted); }
 
 /* =============================================================================
    Policy / API subpages
    ========================================================================== */
 .policy {
-  max-width: 820px; margin: 0 auto; padding: 16px 20px 28px;
+  padding-block: 18px 30px;
   line-height: 1.6; color: var(--text);
-  background: var(--face);
-  border: 3px solid var(--luna); border-top: none; border-radius: 0 0 8px 8px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.42);
+  background: var(--paper);
 }
 .policy h2 { font-size: 14px; margin: 20px 0 6px; color: #15428b; }
 .policy p, .policy li { font-size: 12.5px; }
@@ -858,15 +808,12 @@ a.ext, .policy a, .sitefoot a { color: var(--ink); }
 .policy code, .api-sub code { background: var(--luna-tint2); border: 1px solid #c6d8ef; padding: 0 4px; font-family: var(--mono); font-size: 11.5px; }
 .policy-updated { color: var(--muted); font-size: 11.5px; }
 .policy-foot { margin-top: 26px; padding-top: 12px; border-top: 1px solid #c9c4b0; font-size: 12.5px; }
-/* Subpages are narrower than the app, so match the caption to the body, and
-   they carry no taskbar, so drop the reserved strip. */
-.subpage .topbar { max-width: 820px; }
-.subpage { padding-bottom: 0; }
+/* Subpages run a narrower measure than the workbench; the bands stay full
+   bleed and only their contents narrow (handled by the padding gutter above). */
 
 .api-ep {
   padding: 9px 11px; margin: 10px 0; background: var(--field);
-  border: 2px solid;
-  border-color: var(--face-hi) var(--face-lo2) var(--face-lo2) var(--face-hi);
+  border: 1px solid var(--rule);
 }
 .api-ep-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .api-method {
@@ -911,25 +858,18 @@ select:focus-visible, textarea:focus-visible, .ex:focus-visible,
 }
 
 /* =============================================================================
-   Narrow viewports — drop the desktop metaphor, keep the chrome
+   Narrow viewports
    ========================================================================== */
 @media (max-width: 820px) {
-  body { padding-bottom: 0; }
-  .layout { display: block; }
-  .rail { width: auto; margin-bottom: 10px; }
-  .topbar, .menubar, .layout, .policy {
-    width: 100%; max-width: none; margin-left: 0; margin-right: 0; border-radius: 0;
-  }
-  .topbar { border-left: none; border-right: none; border-top: none; margin-top: 0; }
-  .menubar, .layout, .policy { border-left: none; border-right: none; }
-  .layout, .policy { border-radius: 0; }
-  .topbar::after { display: none; }
+  .layout { display: block; padding-block: 12px 24px; }
+  .rail { width: auto; margin-bottom: 14px; }
+  .sitenav a { padding: 5px 10px; font-size: 11.5px; }
   .tabs { flex-wrap: wrap; }
   .viewer3d { min-height: 0; height: 60vh; }
-  /* The taskbar un-fixes so it can't eat a small screen. */
-  .sitefoot { position: static; height: auto; flex-wrap: wrap; padding: 6px; }
-  .sitefoot > span:first-child { border-radius: 4px; padding: 4px 12px; }
-  .sitefoot-nav { padding: 4px 8px; }
+  .topbar, .sitenav, .crumb, .sitefoot, .layout, .policy,
+  .subpage .topbar, .subpage .sitenav, .subpage .crumb, .subpage .sitefoot {
+    padding-inline: 10px;
+  }
 }
 
 @media (max-width: 520px) {

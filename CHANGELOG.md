@@ -5,6 +5,38 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Interface: from desktop window to research site
+The theme kept its palette, fonts and widget treatment, but the page was built
+as an application *window* — a caption bar and menu bar wrapped around a tab
+control, each layer with its own frame. That read as a tab inside a tab. The
+architecture is now the one a public research site of the period actually used:
+
+- **Masthead band → site nav strip → breadcrumb → sidebar + content → agency
+  footer**, each band full-bleed with its contents on one shared measure. One
+  chrome layer instead of four nested frames.
+- **The window caption is now a masthead** (no caption buttons, no rounded
+  corners, no floating-on-a-desktop shadow), and the decorative `File / Edit /
+  View` menu bar is replaced by a **real site nav** — Workbench, API Reference,
+  RCSB PDB, PubChem, Privacy, Terms — with the current page marked.
+- **A breadcrumb that tracks real state**, not decoration: it names the loaded
+  structure and the open section, and updates on both.
+- **Section tabs are now a flat nav strip** rather than raised 3D tabs, which is
+  what removes the tab-in-a-tab reading.
+- **Content containers lost their two-tone bevels.** On the old tan window face
+  a bevel read as a bevel; on white paper only its dark half is visible, so
+  every box looked like it had a broken border. Containers now take a clean 1px
+  rule. **Form controls keep their bevels** — a sunken input and a raised button
+  are exactly what a form on such a site looked like.
+- **Agency-style footer** — link row, a boxed research-use-only disclaimer, data
+  source attribution, licence, and a "page generated" stamp — replacing the
+  taskbar.
+- **Added a skip-to-content link** as the first item in the tab order, and
+  `aria-current` on the active section.
+
+### Fixed
+- Removed a dead `.raised`/`.sunken` helper pair that nothing referenced.
+
+
 ### Panels tab — the matrix engine gets a front end
 - **Ligand × target heatmap** (`Panels` tab) — pick a curated system, run it, and
   read the matrix. Rows are ligands, columns are targets, and each cell is
