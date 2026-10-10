@@ -29,5 +29,11 @@ jobs:
       - name: Byte-compile all sources
         run: python -m compileall -q server.py snaclex tests
 
+      - name: Syntax-check the front end
+        # app.js is the largest source file in the repo and is otherwise only
+        # exercised by the separate (Playwright) e2e workflow, so a plain parse
+        # here catches a broken bundle on every push for free.
+        run: for f in web/*.js; do node --check "$f"; done
+
       - name: Run test suite
         run: python -m unittest discover -s tests -v

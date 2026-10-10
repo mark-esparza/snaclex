@@ -76,6 +76,7 @@
         <button class="tab" data-tab="pockets">Pockets</button>
         <button class="tab" data-tab="evolution">Evolution</button>
         <button class="tab" data-tab="docking">Docking</button>
+        <button class="tab" data-tab="panels">Panels</button>
         <button class="tab" data-tab="benchmark">Benchmark</button>
         <button class="tab" data-tab="chemical">Chemical</button>
         <button class="tab" data-tab="report">Report</button>
@@ -159,6 +160,21 @@
           <div class="hint" style="margin-top:8px">Docks every chemical into the same target (one shared grid) and ranks them by predicted fit. Uses the target set above.</div>
           <div id="screenContent"></div>
         </div>
+      </section>
+
+      <section class="panel" data-panel="panels">
+        <div class="pocket-controls" style="flex-wrap:wrap">
+          <div>
+            <label class="field-label" for="panelSystem">Curated system</label>
+            <select id="panelSystem"><option value="">Loading…</option></select>
+          </div>
+          <button id="panelRunBtn" class="primary">Run panel</button>
+          <label class="chk"><input type="checkbox" id="panelMeasured" checked /> Look up measured activity (ChEMBL)</label>
+          <span class="hint" style="margin:0">Docks every ligand in the system into every target site and returns a
+          normalized matrix. This is many docking runs — expect minutes.</span>
+        </div>
+        <div id="panelSystemInfo"></div>
+        <div id="panelContent" class="empty">Pick a curated system and run a panel to build a ligand × target matrix.</div>
       </section>
 
       <section class="panel" data-panel="benchmark">

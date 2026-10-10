@@ -5,6 +5,43 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Panels tab — the matrix engine gets a front end
+- **Ligand × target heatmap** (`Panels` tab) — pick a curated system, run it, and
+  read the matrix. Rows are ligands, columns are targets, and each cell is
+  clickable for a full breakdown: raw score, ligand efficiency, z, rank in
+  target, contact counts, top contact residues, which cofactors made it into
+  the grid, and any measured ChEMBL activity for that pair.
+- **The heatmap encodes z-scores, never raw scores.** This is the one thing the
+  UI had to get right: a raw matrix read row-wise ranks pocket burial rather
+  than preference, so the colour scale is bound to the server's per-target
+  z-score and the caption says so.
+- **Diverging scale, validated rather than eyeballed.** Polarity around z = 0
+  (the panel's per-target average), two hues with a neutral midpoint. Each arm
+  was checked as a single-hue ordinal ramp — monotone lightness, ≥ 0.06 step
+  gaps, light end clearing the panel surface — and the poles verified
+  CVD-separable (ΔE 24 protan / 31 normal vision).
+- **Colour is never the only encoding.** Every cell carries its numeric z, the
+  matrix is a real `<table>` with `scope`-d row/column headers and a caption,
+  cells are keyboard-focusable and activate on Enter/Space, and measured
+  activity is flagged with a glyph plus an `aria-label`, not a hue.
+- **Failure and doubt are visible in the grid itself** — a target that could not
+  be loaded gets a crimson cap and a struck-through header; a target whose
+  declared cofactor is absent from its entry (so the site is scored as an empty
+  cavity) gets an amber cap; failed cells are hatched; an unresolvable ligand
+  is marked on its row label.
+- **DRAFT curation banner** renders both when picking a system and on the result
+  itself, since the result's verification block is the state it was actually
+  computed under.
+- **Live progress** — `submitJob` now surfaces the job's `progress` field, so a
+  144-cell panel reports `Docking 47/144 (32.6%)` instead of sitting on
+  "running" for minutes.
+
+### CI
+- **The front end is now syntax-checked on every push** (`node --check web/*.js`).
+  `app.js` is the largest source file in the repo and was previously parsed only
+  by the separate Playwright e2e workflow.
+
+
 ### Interface: "Luna Lab" theme
 - **Full visual redesign** of `web/` as a Windows XP / late-90s scientific
   workstation: the app is now one window on a desktop — Luna-blue caption with

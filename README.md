@@ -127,6 +127,13 @@ spec:
 the same offline. A **catecholamine** system (12 targets x 12 ligands) ships as
 the first curation.
 
+In the browser, the **Panels** tab runs a system and renders the result as a
+clickable heatmap — rows are ligands, columns are targets, and each cell opens a
+breakdown (score, ligand efficiency, z, rank, contacts, cofactors in the grid,
+and any measured ChEMBL activity for that pair). Targets whose declared cofactor
+is missing from their entry, and targets that failed to load, are marked in the
+grid rather than footnoted.
+
 **Scores are normalized per target, and this matters.** A raw grid score is not
 comparable across targets — a deeper pocket scores better for *any* ligand, so
 reading a raw matrix row-wise ranks pocket burial, not preference. Ligand

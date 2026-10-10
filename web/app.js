@@ -37,6 +37,8 @@ const state = {
   dockSite: null,
   pocketView: null,
   evolution: null,
+  systems: null,
+  panel: null,
   colorMode: "mono",
   measureMode: false,
   measureAtoms: [],
@@ -92,7 +94,11 @@ async function getJSON(url) {
 // Submit a long-running analysis (dock/screen) to the async job queue and poll
 // until it finishes, so a slow compute never holds the HTTP connection open.
 // Returns the job's result, or throws with the server's error message.
-async function submitJob(kind, params, { interval = 1000, timeoutMs = 180000 } = {}) {
+async function submitJob(
+  kind,
+  params,
+  { interval = 1000, timeoutMs = 180000, onProgress = null } = {}
+) {
   const resp = await fetch("/api/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -108,6 +114,9 @@ async function submitJob(kind, params, { interval = 1000, timeoutMs = 180000 } =
     const r = await fetch(`/api/jobs/${encodeURIComponent(id)}`);
     const s = await r.json();
     if (!r.ok) throw new Error(s.error || `HTTP ${r.status}`);
+    // Multi-step jobs (panels) report incremental progress; without surfacing
+    // it a minutes-long run is indistinguishable from a wedged one.
+    if (onProgress && s.progress) onProgress(s.progress);
     if (s.status === "done") return s.result;
     if (s.status === "error") throw new Error(s.error || "Job failed");
     if (Date.now() > deadline) throw new Error("Timed out waiting for the job to finish.");
@@ -1343,6 +1352,311 @@ function renderScreen(data) {
   );
 }
 
+// ================= interaction panels (ligand × target) =================
+// A panel is a *matrix* question: dock every ligand into every target and read
+// the grid. The one thing the UI must get right is that raw scores are NOT
+// comparable across targets (a deeper pocket scores better for any ligand), so
+// the heatmap encodes the server's per-target z-score and never the raw score.
+
+// Diverging scale: polarity around z = 0 (this panel's per-target average).
+// Two hues + a neutral midpoint, each arm validated as a single-hue ordinal
+// ramp (monotone lightness, >=0.06 step gaps, light end clearing the panel
+// surface). Steps below the 3:1 surface-contrast line are relieved by the
+// numeric label carried in every cell and by the matrix being a real table.
+const PANEL_SCALE = [
+  { max: -1.75, bg: "#962a12", fg: "#ffffff", label: "much worse than average" },
+  { max: -1.25, bg: "#b53f24", fg: "#ffffff", label: "worse" },
+  { max: -0.75, bg: "#d26545", fg: "#ffffff", label: "somewhat worse" },
+  { max: -0.25, bg: "#e28d75", fg: "#2a1008", label: "slightly worse" },
+  { max: 0.25, bg: "#ebe9e2", fg: "#1f1f1f", label: "about average" },
+  { max: 0.75, bg: "#79a9df", fg: "#0c2340", label: "slightly better" },
+  { max: 1.25, bg: "#4b8ad8", fg: "#ffffff", label: "somewhat better" },
+  { max: 1.75, bg: "#2466c8", fg: "#ffffff", label: "better" },
+  { max: Infinity, bg: "#0a4fb5", fg: "#ffffff", label: "much better than average" },
+];
+
+function panelSwatch(z) {
+  if (z === null || z === undefined) {
+    return { bg: "#f4f2e9", fg: "#4a4a4a", label: "no z-score available" };
+  }
+  return PANEL_SCALE.find((s) => z < s.max) || PANEL_SCALE[PANEL_SCALE.length - 1];
+}
+
+async function loadSystems() {
+  const sel = $("#panelSystem");
+  if (!sel) return;
+  try {
+    const data = await getJSON("/api/systems");
+    const systems = data.systems || [];
+    state.systems = systems;
+    if (!systems.length) {
+      sel.innerHTML = `<option value="">No curated systems available</option>`;
+      return;
+    }
+    sel.innerHTML = systems
+      .map(
+        (s) =>
+          `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} — ${s.n_targets}×${s.n_ligands}</option>`
+      )
+      .join("");
+    renderSystemInfo(systems[0]);
+    sel.addEventListener("change", () =>
+      renderSystemInfo(systems.find((s) => s.id === sel.value))
+    );
+  } catch (err) {
+    sel.innerHTML = `<option value="">Could not load systems</option>`;
+  }
+}
+
+// A curated system asserts things the reader cannot check by running the code
+// (that a PDB entry is the protein named, that its site ligand is deposited).
+// An unverified curation must therefore announce itself everywhere it appears.
+function verificationBannerHTML(v) {
+  if (!v) return "";
+  if (v.fully_verified) {
+    return `<div class="verify-banner ok"><b>Verified.</b> All ${v.n_targets} structures
+      checked against RCSB${v.last_verified_utc ? ` on ${escapeHtml(v.last_verified_utc)}` : ""}.</div>`;
+  }
+  const unver = (v.unverified_target_ids || []).map(escapeHtml).join(", ");
+  return `<div class="verify-banner warn">
+      <b>DRAFT CURATION — ${v.n_verified} of ${v.n_targets} structures verified.</b>
+      ${escapeHtml(v.note || "")}
+      ${unver ? `<div class="verify-list">Unverified: ${unver}</div>` : ""}
+    </div>`;
+}
+
+function renderSystemInfo(sys) {
+  const host = $("#panelSystemInfo");
+  if (!host) return;
+  if (!sys) {
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = `
+    ${verificationBannerHTML(sys.verification)}
+    <div class="hint" style="margin-top:8px">${escapeHtml(sys.description || "")}</div>`;
+}
+
+async function runPanel() {
+  const sel = $("#panelSystem");
+  const systemId = sel && sel.value;
+  if (!systemId) {
+    setStatus("No curated system selected.", "error");
+    return;
+  }
+  const btn = $("#panelRunBtn");
+  btn.disabled = true;
+  setStatus("Starting panel — building one scoring grid per target…", "busy");
+  try {
+    const data = await submitJob(
+      "panel",
+      {
+        system: systemId,
+        include_measured: !!($("#panelMeasured") && $("#panelMeasured").checked),
+      },
+      {
+        interval: 1500,
+        timeoutMs: 1800000, // a full M×N panel is minutes, not seconds
+        onProgress: (p) =>
+          setStatus(
+            `Docking ${p.done}/${p.total} pairs (${p.percent}%)${p.label ? " — " + escapeHtml(p.label) : ""}…`,
+            "busy"
+          ),
+      }
+    );
+    state.panel = data;
+    renderPanel(data);
+    setStatus(
+      `Panel complete: ${data.n_scored}/${data.n_cells} pairs scored` +
+        (data.n_failed ? `, ${data.n_failed} failed` : "") + "."
+    );
+  } catch (err) {
+    setStatus(`Panel failed: ${err.message}`, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function panelCellHTML(cell, target, ligand) {
+  if (!cell) return `<td class="pcell pcell-none">·</td>`;
+  if (cell.error) {
+    return `<td class="pcell pcell-err" title="${escapeHtml(cell.error)}"
+      aria-label="${escapeHtml(ligand.label)} against ${escapeHtml(target.label)}: failed — ${escapeHtml(cell.error)}">×</td>`;
+  }
+  const z = cell.z_target;
+  const sw = panelSwatch(z);
+  const shown = z === null || z === undefined ? "n/a" : z.toFixed(2);
+  // Measured activity is flagged with a glyph, never by color alone.
+  const measured = cell.measured ? `<i class="pmeas" aria-hidden="true">●</i>` : "";
+  const measuredText = cell.measured ? "; has measured ChEMBL activity" : "";
+  return `<td class="pcell" style="background:${sw.bg};color:${sw.fg}"
+      data-target="${escapeHtml(cell.target_id)}" data-ligand="${escapeHtml(cell.ligand_id)}"
+      tabindex="0" role="button"
+      title="${escapeHtml(ligand.label)} × ${escapeHtml(target.label)} — z ${shown}, score ${cell.score}, ${sw.label}"
+      aria-label="${escapeHtml(ligand.label)} against ${escapeHtml(target.label)}: z ${shown}, ${sw.label}${measuredText}"
+    >${shown}${measured}</td>`;
+}
+
+function panelLegendHTML() {
+  const swatches = PANEL_SCALE.map(
+    (s) =>
+      `<span class="pleg-sw" style="background:${s.bg}" title="${escapeHtml(s.label)}"></span>`
+  ).join("");
+  return `
+    <div class="panel-legend">
+      <span class="pleg-end">worse than<br>this target's average</span>
+      ${swatches}
+      <span class="pleg-end">better than<br>this target's average</span>
+      <span class="pleg-note"><i class="pmeas" aria-hidden="true">●</i> = measured ChEMBL activity exists for this pair</span>
+    </div>`;
+}
+
+function renderPanel(data) {
+  const c = $("#panelContent");
+  c.className = "";
+  const targets = data.targets || [];
+  const ligands = data.ligands || [];
+
+  const byPair = {};
+  (data.cells || []).forEach((cell) => {
+    byPair[cell.ligand_id + "\u0000" + cell.target_id] = cell;
+  });
+
+  const head = targets
+    .map((t) => {
+      // A target whose declared cofactor is missing is scored as an empty
+      // cavity, which materially weakens its whole column — so the column is
+      // marked, not just footnoted. A rotated glyph is unreadable, so the cue
+      // is an amber cap plus the tooltip.
+      const cls =
+        "pcol" + (t.error ? " pcol-err" : t.warning ? " pcol-warn" : "");
+      return `<th scope="col" class="${cls}" title="${escapeHtml(
+        [t.label, t.title, t.site, t.warning, t.error].filter(Boolean).join(" — ")
+      )}"><span>${escapeHtml(t.id)}</span></th>`;
+    })
+    .join("");
+
+  const rows = ligands
+    .map((lig) => {
+      const sel = (data.selectivity || {})[lig.id] || {};
+      const cells = targets
+        .map((t) => panelCellHTML(byPair[lig.id + "\u0000" + t.id], t, lig))
+        .join("");
+      const gap =
+        sel.selectivity_gap === null || sel.selectivity_gap === undefined
+          ? "—"
+          : sel.selectivity_gap.toFixed(2);
+      const best = sel.best_target_id ? escapeHtml(sel.best_target_id) : "—";
+      return `<tr>
+        <th scope="row" class="prow" title="${escapeHtml([lig.label, lig.role, lig.error].filter(Boolean).join(" — "))}">
+          ${escapeHtml(lig.label)}${lig.error ? ' <span class="pbad">unavailable</span>' : ""}
+        </th>
+        ${cells}
+        <td class="psel">${best}</td>
+        <td class="psel">${gap}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const sys = data.system;
+  const info = $("#panelSystemInfo");
+  if (info) info.innerHTML = "";   // the result's own banner is authoritative
+  c.innerHTML = `
+    ${sys ? verificationBannerHTML(sys.verification) : ""}
+    ${sys ? `<div class="section-h">${escapeHtml(sys.name)} <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">v${escapeHtml(sys.version || "")}</span></div>` : ""}
+    <div class="panel-matrix-wrap">
+      <table class="data panel-matrix">
+        <caption class="sr-only">Ligand by target interaction matrix. Cell values are
+          per-target z-scores; higher is better than that target's panel average.</caption>
+        <thead><tr><th scope="col" class="pcorner">ligand \\ target</th>${head}
+          <th scope="col" class="psel-h">best</th><th scope="col" class="psel-h">gap</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    ${panelLegendHTML()}
+    <div class="hint"><b>Cells show z-scores, not raw scores.</b>
+      ${escapeHtml((data.normalization || {}).note || "")}</div>
+    <div id="panelDetail"></div>
+    ${methodsHTML(data.methods)}
+    ${panelLimitationsHTML(data.methods)}`;
+
+  c.querySelectorAll(".pcell[data-target]").forEach((td) => {
+    const show = () => showPanelCell(td.dataset.ligand, td.dataset.target);
+    td.addEventListener("click", show);
+    td.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        show();
+      }
+    });
+  });
+}
+
+function panelLimitationsHTML(m) {
+  const limits = (m && m.limitations) || [];
+  if (!limits.length) return "";
+  return `<div class="methods-limits" style="margin-top:14px"><b>What a panel is not</b>
+    <ul>${limits.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`;
+}
+
+function showPanelCell(ligandId, targetId) {
+  const data = state.panel;
+  if (!data) return;
+  const cell = (data.cells || []).find(
+    (x) => x.ligand_id === ligandId && x.target_id === targetId
+  );
+  const lig = (data.ligands || []).find((x) => x.id === ligandId) || {};
+  const tgt = (data.targets || []).find((x) => x.id === targetId) || {};
+  const host = $("#panelDetail");
+  if (!host || !cell) return;
+
+  const row = (k, v) =>
+    v === undefined || v === null || v === ""
+      ? ""
+      : `<tr><td class="mk">${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`;
+
+  if (cell.error) {
+    host.innerHTML = `<div class="panel-detail"><div class="section-h">${escapeHtml(lig.label || ligandId)} × ${escapeHtml(tgt.label || targetId)}</div>
+      <div class="pharm-match miss">${escapeHtml(cell.error)}</div></div>`;
+    host.scrollIntoView({ block: "nearest" });
+    return;
+  }
+
+  const top = (cell.top_residues || [])
+    .map((r) => `<span class="res-chip"><b>${escapeHtml(r.res_name + r.res_seq)}</b> <span class="rd">${escapeHtml(r.chain)} · ${r.total}× · ${r.min_distance}Å</span></span>`)
+    .join("");
+  const counts = cell.counts || {};
+  const meas = cell.measured;
+  const act = meas && meas.best_activity;
+
+  host.innerHTML = `
+    <div class="panel-detail">
+      <div class="section-h">${escapeHtml(lig.label || ligandId)} × ${escapeHtml(tgt.label || targetId)}</div>
+      <table class="methods-table">
+        ${row("Target", [tgt.title, tgt.site].filter(Boolean).join(" — "))}
+        ${row("Target role", tgt.role)}
+        ${row("Ligand role", lig.role)}
+        ${row("Score (raw, this target only)", cell.score)}
+        ${row("Ligand efficiency", cell.ligand_efficiency)}
+        ${row("z vs this target's panel average", cell.z_target === null ? "not available (no spread)" : cell.z_target)}
+        ${row("Rank in target", cell.rank_in_target ? `${cell.rank_in_target} of ${cell.n_in_target}` : "")}
+        ${row("Contacts", `${cell.interaction_total} across ${cell.contact_residue_count} residues`)}
+        ${row("H-bonds / salt / hydrophobic", `${counts.hydrogen_bond ?? 0} / ${counts.salt_bridge ?? 0} / ${counts.hydrophobic ?? 0}`)}
+        ${row("Cofactors in grid", (tgt.cofactors_included || []).join(", "))}
+        ${tgt.warning ? row("Warning", tgt.warning) : ""}
+      </table>
+      ${top ? `<div class="res-chips" style="margin-top:8px">${top}</div>` : ""}
+      ${
+        meas
+          ? `<div class="pharm-match hit" style="margin-top:10px"><b>Measured (ChEMBL):</b>
+              ${escapeHtml(meas.target_name || "")} ${act ? `— ${escapeHtml(String(act.standard_type || ""))} ${escapeHtml(String(act.standard_value ?? ""))} ${escapeHtml(String(act.standard_units || ""))}` : ""}
+              <span class="conf">match: ${escapeHtml(meas.match_level || "")}</span></div>`
+          : `<div class="pharm-match miss" style="margin-top:10px">No measured ChEMBL activity found for this pair — the prediction stands alone here.</div>`
+      }
+    </div>`;
+  host.scrollIntoView({ block: "nearest" });
+}
+
 // ================= pocket detection =================
 async function detectPockets() {
   if (!state.pdbId) {
@@ -2052,6 +2366,9 @@ function init() {
     if (e.key === "Enter") lookupChemical($("#chemInput").value);
   });
   $("#detectBtn").addEventListener("click", detectPockets);
+  const panelBtn = $("#panelRunBtn");
+  if (panelBtn) panelBtn.addEventListener("click", runPanel);
+  loadSystems();
   $("#evoBtn").addEventListener("click", runEvolution);
   $("#colorMode").addEventListener("change", (e) => {
     const mode = e.target.value;

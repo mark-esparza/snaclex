@@ -228,8 +228,12 @@ enzymes/receptors. Phase 7 adds that axis.
   fixes cofactor-dependent sites being scored as empty cavities.
 - [x] **Site-shell receptor retention** — panels keep whole residues within
   `GRID_HALF + 12 Å` instead of whole assemblies; proven exact by test.
-- [ ] **Panel UI** — a matrix/heatmap tab (the engine and API are done; the
-  front end still only exposes single-site analysis and batch screening).
+- [x] **Panel UI** — a `Panels` tab with a clickable ligand × target heatmap.
+  Colour is bound to the per-target z-score (never the raw score), on a
+  diverging scale whose arms were validated as ordinal ramps and whose poles
+  are CVD-separable; every cell also carries its number, so colour is never the
+  only encoding. Load failures, missing cofactors and unresolvable ligands are
+  marked in the grid itself.
 - [ ] **Verify the shipped curation** — needs network access to RCSB; the
   session that authored it had egress blocked, so it ships as a draft.
 - [ ] **Positive-control reporting** — surface "did the known inhibitor top its
