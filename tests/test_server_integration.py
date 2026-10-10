@@ -301,6 +301,37 @@ class TestServerIntegration(unittest.TestCase):
         resp, _ = self._head("/nope.html")
         self.assertEqual(resp.status, 404)
 
+    def test_selftest_endpoint_reports_every_source(self):
+        """The endpoint must answer even when every upstream is unreachable."""
+        fake = {
+            "tool": "SnaCleX upstream self-test", "run_utc": "now",
+            "n_checks": 2, "n_passed": 1, "n_failed": 1, "all_ok": False,
+            "by_source": {"RCSB PDB": {"ok": 1, "failed": 0}},
+            "checks": [], "note": "x",
+        }
+        server._SELFTEST_CACHE = None
+        with mock.patch.object(server.selftest, "run_checks", return_value=fake):
+            resp, body = self._get("/api/selftest")
+            self.assertEqual(resp.status, 200)
+            data = json.loads(body)
+            self.assertFalse(data["all_ok"])
+            self.assertFalse(data["cached"])
+            self.assertEqual(data["n_failed"], 1)
+
+    def test_selftest_result_is_cached(self):
+        """Each run costs eight upstream calls; a caller must not repeat it."""
+        fake = {"all_ok": True, "n_checks": 1, "n_passed": 1, "n_failed": 0,
+                "checks": [], "by_source": {}}
+        server._SELFTEST_CACHE = None
+        with mock.patch.object(server.selftest, "run_checks",
+                               return_value=fake) as run:
+            self._get("/api/selftest")
+            self._get("/api/selftest")
+            self.assertEqual(run.call_count, 1)
+        _r, body = self._get("/api/selftest")
+        self.assertTrue(json.loads(body)["cached"])
+        server._SELFTEST_CACHE = None
+
     def test_systems_catalog_lists_curated_systems(self):
         resp, body = self._get("/api/systems")
         self.assertEqual(resp.status, 200)

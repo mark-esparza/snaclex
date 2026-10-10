@@ -205,6 +205,35 @@ The host needs outbound internet (for RCSB/PubChem/ChEMBL) — all the major
 platforms allow this by default. Note: free tiers sleep when idle, so the first
 request after a pause may take ~30 s to wake.
 
+### Checking the databases
+
+SnaCleX has no database of its own: every result is assembled live from five
+public services, so a deployment is only as good as its outbound access. To
+check all of them at once:
+
+```
+python -m snaclex.selftest          # locally, or on the host
+curl https://<your-host>/api/selftest
+```
+
+Each check calls SnaCleX's own client for that source and asserts a known fact
+about the response (aspirin is CID 2244, crambin has a few hundred protein
+atoms), so it catches a changed upstream response shape as well as an
+unreachable host. Exit status is 0 only when every check passes, so it can gate
+a deploy.
+
+| Source | Hosts | Feeds |
+| --- | --- | --- |
+| RCSB PDB | `files.rcsb.org`, `data.rcsb.org`, `search.rcsb.org` | structures, metadata, UniProt mapping, search |
+| PubChem (NCBI) | `pubchem.ncbi.nlm.nih.gov` | compound properties, 3D conformers (docking) |
+| ChEMBL (EMBL-EBI) | `www.ebi.ac.uk` | pharmacology, measured activity |
+| InterPro / Pfam (EMBL-EBI) | `www.ebi.ac.uk` | family alignments (conservation) |
+| 3Dmol.js | `3Dmol.org` | the browser viewer (client-side; allowed by the CSP) |
+
+If a check fails, confirm the platform's egress rules before looking for a bug
+in SnaCleX — a sandbox or corporate proxy that blocks these hosts produces
+exactly the same failures as a broken integration.
+
 ## Try it
 
 - `1HSG` — HIV-1 protease + indinavir (MK1): rich H-bond + hydrophobic pocket; catalytic Asp25 is the top contact.
@@ -234,6 +263,7 @@ snaclex/
   provenance.py        method/benchmark transparency blocks
   benchmark.py         redocking benchmark harness (CLI)
   apidocs.py           machine-readable API contract
+  selftest.py          upstream connectivity self-test (CLI + /api/selftest)
 web/
   index.html style.css app.js
 legacy/                previous StructInteract CLI (archived)
@@ -252,6 +282,7 @@ The full, live contract is served at `GET /api/docs` (rendered at `/api.html`).
 | `GET /api/evolution?pdb=ID` | Pfam conservation per residue/pocket + methods/provenance |
 | `GET /api/search?q=TEXT` | PDB full-text search results |
 | `GET /api/version` · `GET /api/docs` | version · machine-readable API contract |
+| `GET /api/selftest` | live connectivity check against every integrated database (cached 60 s) |
 | `GET /api/systems` · `GET /api/systems/{id}` | curated systems runnable as a panel, with verification state |
 | `POST /api/jobs` → `GET /api/jobs/{id}` | submit a job (`kind` = `dock`/`screen`/`benchmark`/`panel`) and poll its status, progress and result |
 | `POST /api/upload` | analyze a user-supplied PDB or mmCIF file (returns an upload id usable as `ID` above) |

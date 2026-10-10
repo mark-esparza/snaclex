@@ -8,6 +8,7 @@ genuine client errors (404 not-found, 400 bad-request) fail fast.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import threading
@@ -56,6 +57,28 @@ def reset_cache():
         _CACHE_READY = False
 
 
+# Per-thread fetch policy. A diagnostic sweep wants to fail fast rather than
+# spend ~19 s backing off against a host that is simply unreachable, but the
+# server is threaded, so it must not slow down or alter real requests running
+# concurrently on other threads — hence thread-local rather than a global.
+_local = threading.local()
+
+
+@contextlib.contextmanager
+def fail_fast(attempts: int = 1, timeout: int = 8):
+    """Within this thread only, retry less and time out sooner.
+
+    Used by the upstream self-test: when a host is down the point is to say so
+    quickly, not to exhaust the retry budget a user-facing analysis wants.
+    """
+    prev = (getattr(_local, "attempts", None), getattr(_local, "timeout", None))
+    _local.attempts, _local.timeout = attempts, timeout
+    try:
+        yield
+    finally:
+        _local.attempts, _local.timeout = prev
+
+
 class FetchError(Exception):
     """Raised when an upstream fetch ultimately fails."""
 
@@ -72,11 +95,16 @@ def _read(url: str, timeout: int) -> bytes:
         if hit is not None:
             return hit
 
+    max_attempts = getattr(_local, "attempts", None) or MAX_ATTEMPTS
+    local_timeout = getattr(_local, "timeout", None)
+    if local_timeout:
+        timeout = min(timeout, local_timeout)
+
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
     last: Exception | None = None
     throttled = False
 
-    for attempt in range(MAX_ATTEMPTS):
+    for attempt in range(max_attempts):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = resp.read()
@@ -93,7 +121,7 @@ def _read(url: str, timeout: int) -> bytes:
         except (urllib.error.URLError, TimeoutError) as exc:
             last = exc
 
-        if attempt < MAX_ATTEMPTS - 1:
+        if attempt < max_attempts - 1:
             time.sleep(_BACKOFF[min(attempt, len(_BACKOFF) - 1)])
 
     if throttled:
@@ -102,7 +130,8 @@ def _read(url: str, timeout: int) -> bytes:
             "seconds and try again."
         ) from last
     reason = getattr(last, "reason", last)
-    raise FetchError(f"Could not reach {url} after {MAX_ATTEMPTS} tries ({reason})") from last
+    tries = "1 try" if max_attempts == 1 else f"{max_attempts} tries"
+    raise FetchError(f"Could not reach {url} after {tries} ({reason})") from last
 
 
 def fetch_text(url: str, timeout: int = DEFAULT_TIMEOUT) -> str:

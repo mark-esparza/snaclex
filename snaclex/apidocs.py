@@ -81,6 +81,16 @@ _ENDPOINTS = [
                  "matrix. Reports incremental progress while running.",
     },
     {
+        "method": "GET", "path": "/api/selftest",
+        "params": {},
+        "returns": "live connectivity check against every integrated database "
+                   "(RCSB files/data/search, PubChem properties + conformers, "
+                   "ChEMBL, InterPro/Pfam): per-check ok/error, latency, and "
+                   "what each one proves. Each check calls SnaCleX's own client "
+                   "and asserts a known fact, so it also catches a changed "
+                   "upstream response shape. Rate-limited and cached 60s.",
+    },
+    {
         "method": "GET", "path": "/api/systems",
         "params": {},
         "returns": "catalog of curated systems (id, name, counts, verification "

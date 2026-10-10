@@ -5,6 +5,35 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added: upstream connectivity self-test
+- **`snaclex/selftest.py` + `GET /api/selftest` + `python -m snaclex.selftest`** —
+  SnaCleX has no database of its own; every result is assembled live from five
+  public services, so a deployment is only as good as its outbound access.
+  This checks all of them in one pass and reports per-source status, latency,
+  and what each check proves.
+- **The checks exercise the real integration, not just reachability.** Each one
+  calls SnaCleX's own client for that source and asserts a known fact about the
+  result — aspirin is CID 2244, crambin parses to a few hundred protein atoms,
+  1CRN maps to a UniProt accession — so a silently changed response shape fails
+  here rather than in a user's analysis. Eight checks across RCSB
+  (files/data/search/GraphQL), PubChem (properties + 3D conformer), ChEMBL and
+  InterPro/Pfam.
+- **Exit status is 0 only when every check passes**, so it can gate a deploy.
+- The endpoint is rate-limited as an expensive route and cached for 60 s, so it
+  cannot be used to amplify traffic at RCSB/PubChem/EBI on our behalf.
+- `http_util.fail_fast()` — a **thread-local** retry/timeout override used by the
+  self-test, so a diagnostic reports a down host in ~0.3 s instead of spending
+  the full retry budget, **without** altering concurrent real requests on the
+  threaded server. The full sweep went from 76 s to under 4 s.
+
+### Fixed
+- `HEAD` requests returned **501** from every URL (`BaseHTTPRequestHandler`
+  answers "Unsupported method" unless `do_HEAD` exists), so uptime monitors,
+  load balancers and link checkers all got an error. HEAD now returns the same
+  status, `Content-Length` and security headers as GET, with no body. Render's
+  own health check uses GET, so this was latent rather than a live outage.
+
+
 ### Interface
 - **Institutional seal** replaces the placeholder glyph in the masthead — an
   inline SVG mark (ring, hexagon, gold core, three nodes), so it adds no

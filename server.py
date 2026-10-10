@@ -43,6 +43,7 @@ from snaclex import (
     pubchem,
     rcsb,
     report,
+    selftest,
     systems,
 )
 from snaclex.http_util import FetchError
@@ -131,7 +132,7 @@ _CSP = (
 # Compute-heavy GET endpoints get a tighter per-IP budget plus a global
 # concurrency cap. Docking/screening are no longer here — they run through the
 # async job queue (POST /api/jobs), which bounds concurrency via its worker pool.
-EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution"}
+EXPENSIVE_ENDPOINTS = {"/api/pockets", "/api/evolution", "/api/selftest"}
 
 MAX_QUERY_LEN = 200       # single chemical / search term
 MAX_CHEMS_LEN = 2000      # batch-screening textarea
@@ -294,6 +295,11 @@ def _cache_subset(parent_pid, chain, structure, meta):
         _UPLOAD_CACHE[sub_id] = entry
     return sub_id, entry
 
+
+# Upstream self-test result, cached briefly (see Handler._api_selftest).
+_SELFTEST_LOCK = threading.Lock()
+_SELFTEST_CACHE: tuple[float, dict] | None = None
+_SELFTEST_TTL = 60.0
 
 _EVO_CACHE: dict[str, dict] = {}
 
@@ -1003,6 +1009,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._api_version(qs)
         if path == "/api/docs":
             return self._send_json(apidocs.contract())
+        if path == "/api/selftest":
+            return self._api_selftest(qs)
         if path == "/api/systems":
             return self._api_systems(qs)
         if path.startswith("/api/systems/"):
@@ -1250,6 +1258,27 @@ class Handler(BaseHTTPRequestHandler):
         if not query:
             return self._send_error_json("Missing 'q' parameter")
         return self._send_json({"results": rcsb.search_by_name(query, limit=10)})
+
+    def _api_selftest(self, qs):
+        """Live connectivity check against every integrated database.
+
+        Cached briefly: the result is a property of the host's network, which
+        does not change second to second, and each run costs eight upstream
+        requests that we should not let a caller repeat at will.
+        """
+        global _SELFTEST_CACHE
+        now = time.monotonic()
+        with _SELFTEST_LOCK:
+            cached = _SELFTEST_CACHE
+        if cached is not None and now - cached[0] < _SELFTEST_TTL:
+            report = dict(cached[1], cached=True,
+                          cache_age_s=round(now - cached[0], 1))
+            return self._send_json(report)
+
+        report = selftest.run_checks()
+        with _SELFTEST_LOCK:
+            _SELFTEST_CACHE = (now, report)
+        return self._send_json(dict(report, cached=False))
 
     def _api_systems(self, qs):
         """Catalog of curated systems available to the panel runner."""
