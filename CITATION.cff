@@ -21,3 +21,17 @@ keywords:
   - molecular docking
   - binding pockets
   - evolutionary conservation
+preferred-citation:
+  type: article
+  title: "SnaCleX: a browser-based structural biology workbench for protein–ligand interaction analysis, pocket prioritization, and exploratory docking"
+  authors:
+    - family-names: Esparza
+      given-names: Mark
+      orcid: "https://orcid.org/0009-0000-5171-102X"
+  doi: 10.5281/zenodo.23326777
+  url: "https://zenodo.org/records/23326777"
+  publisher:
+    name: Zenodo
+  year: 2026
+  month: 10
+  status: preprint

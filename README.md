@@ -35,6 +35,19 @@ behind it, and exports to JSON/CSV/PDB.
 > own terms; see [NOTICE](NOTICE). If you use SnaCleX in research, please cite it
 > (see [CITATION.cff](CITATION.cff)): https://doi.org/10.5281/zenodo.23167410
 
+## Preprint
+
+The design of SnaCleX and its benchmark on the Astex Diverse and PoseBusters sets
+are described in a preprint (not peer reviewed):
+
+> Esparza, M. (2026). *SnaCleX: a browser-based structural biology workbench for
+> protein–ligand interaction analysis, pocket prioritization, and exploratory
+> docking* [Preprint]. Zenodo. https://doi.org/10.5281/zenodo.23326777
+
+The results in the preprint were produced with SnaCleX 0.1.0 and the scripts in
+[`benchmarks/`](https://github.com/mark-esparza/snaclex/tree/5b56b6f/benchmarks)
+at commit `5b56b6f`.
+
 ## What it does
 
 1. **Load a protein** by PDB ID (or full-text search the PDB).
