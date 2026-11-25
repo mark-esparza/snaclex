@@ -10,14 +10,9 @@
 //
 // Pure module: no DOM, no WebGL. Node's test runner imports it directly.
 
-export const COLOR_NAMES = {
-  pink: '#ff5fa2', red: '#ff4d4d', orange: '#ff9a3c', gold: '#ffc94d',
-  yellow: '#fff06b', green: '#5fe07a', teal: '#3fd6c6', blue: '#4da3ff',
-  violet: '#a77bff', white: '#f2f2f2', grey: '#9aa0a6',
-};
+import { COLOR_NAMES, DIRS, HEADER_KEYS, suggest, validate } from './schema.js';
 
-export const DIRS = ['left', 'right', 'top', 'bottom', 'front', 'back'];
-export const HEADER_KEYS = ['title', 'size', 'duration', 'style', 'note', 'credits'];
+export { COLOR_NAMES, DIRS, HEADER_KEYS };
 
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const NUM = '-?(?:\\d+\\.?\\d*|\\.\\d+)(?:e-?\\d+)?';
@@ -193,6 +188,7 @@ export function parseSyntax(text) {
   const scene = {
     title: '', size: [1920, 1080], duration: null, style: 'dark',
     note: null, credits: true, actors: [], actions: [],
+    lines: {}, // header word -> line number, for validation messages
   };
   const errors = [];
   const lines = String(text ?? '').split(/\r?\n/);
@@ -203,7 +199,10 @@ export function parseSyntax(text) {
       if (tokens.length === 0) return;
       const first = tokens[0];
       const word = first.quoted ? '' : first.text;
-      if (HEADER_KEYS.includes(word)) return parseHeader(word, tokens, scene);
+      if (HEADER_KEYS.includes(word)) {
+        scene.lines[word] = line;
+        return parseHeader(word, tokens, scene);
+      }
       if (word === 'actor') return void scene.actors.push(parseActor(tokens, line));
       const m = TIMESPEC_RE.exec(word);
       if (m) return void scene.actions.push(parseAction(tokens, line, m));
@@ -216,26 +215,17 @@ export function parseSyntax(text) {
   return { scene: errors.length ? null : scene, errors, warnings: [] };
 }
 
-// Hook so the schema module can add "did you mean" to unknown first words.
-let unknownStartHook = null;
-export function setUnknownStartHook(fn) { unknownStartHook = fn; }
 function unknownStart(word) {
+  const hint = suggest(word, [...HEADER_KEYS, 'actor']);
   const base = `"${word}" is not a header, "actor", or a time`;
-  const hint = unknownStartHook ? unknownStartHook(word) : null;
   return hint ? `${base} — did you mean "${hint}"?` : base;
 }
 
-// Full parse: syntax, then schema validation (added by the schema module).
-let validator = null;
-export function setValidator(fn) { validator = fn; }
-
+// Full parse: syntax, then schema validation (types, verbs, references,
+// defaults). `scene` is null whenever there are errors.
 export function parse(text) {
   const r = parseSyntax(text);
-  if (!r.scene || !validator) return r;
-  const v = validator(r.scene);
-  return {
-    scene: v.errors.length ? null : r.scene,
-    errors: v.errors,
-    warnings: v.warnings,
-  };
+  if (!r.scene) return r;
+  const v = validate(r.scene);
+  return { scene: v.errors.length ? null : r.scene, errors: v.errors, warnings: v.warnings };
 }
