@@ -87,7 +87,7 @@ export function anchorPoint(decl, state, ref) {
     const L = (decl.params.length ?? 12) * (1.4 - 0.4 * (p.condense ?? 1));
     local = {
       centromere: [0, 0, 0],
-      kinetochore: [-KINETOCHORE_OFFSET, 0, 0],
+      kinetochore: [-(KINETOCHORE_OFFSET + ((p.separate ?? 0) * (p.gap ?? 6)) / 2), 0, 0],
       top: [0, L / 2, 0],
       bottom: [0, -L / 2, 0],
     }[ref.part] || [0, 0, 0];

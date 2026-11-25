@@ -60,3 +60,8 @@ test('actor extents', () => {
   assert.equal(actorExtent('protein', { size: 6, scale: 1 }), 3);
   assert.equal(actorExtent('point', { scale: 1 }), 1);
 });
+
+test('kinetochore moves with the left sister when sisters separate', () => {
+  const decl = { type: 'chromosome', params: { length: 12 } };
+  close(anchorPoint(decl, state({ p: { condense: 1, separate: 1, gap: 6 } }), { ref: 'c', part: 'kinetochore' }), [-4.2, 0, 0]);
+});

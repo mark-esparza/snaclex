@@ -5,6 +5,7 @@
 
 import * as THREE from '../../vendor/three.module.min.js';
 import { makeHelix, makeStrand, makeProtein, makePoint, makeArrow, makeLabel } from './molecular.js';
+import { makeRing, makeChromosome, makeFibre, makeCell } from './cellular.js';
 
 export const VIEW_BUILDERS = {
   helix: makeHelix,
@@ -13,6 +14,10 @@ export const VIEW_BUILDERS = {
   point: makePoint,
   arrow: makeArrow,
   label: makeLabel,
+  ring: makeRing,
+  chromosome: makeChromosome,
+  fibre: makeFibre,
+  cell: makeCell,
 };
 
 export function registerViews(map) { Object.assign(VIEW_BUILDERS, map); }
