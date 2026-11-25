@@ -6,6 +6,7 @@ import { parse } from './parse.js';
 import { compile, stateAt } from './timeline.js';
 import { Stage } from './render/stage.js';
 import { loadStructures } from './structures.js';
+import { drawOverlay } from './render/overlay.js';
 
 const DEV_SCENES = {
   '1': `
@@ -32,6 +33,13 @@ actor f = fibre from=pole to=c1.kinetochore
 3-5s cell pinch
 6-8s cell split
 `,
+  '4': `
+title "Overlay check"
+note "Stylised; not to scale"
+actor sep = protein from=7NJ1 chain=A label="separase"
+actor dna = helix turns=10 at=0,-14,0 label="DNA"
+0-3s caption "Securin is degraded, so separase is released and can cut cohesin along the chromosome arms"
+`,
   '3': `
 actor c1 = chromosome color=violet
 actor coh = ring around=c1.top radius=2.6
@@ -54,7 +62,14 @@ if (new URLSearchParams(location.search).has('dev')) {
   stage.setSize(Math.round(rect.width), Math.round(rect.height), Math.min(2, devicePixelRatio));
   const { beads } = await loadStructures(r.scene);
   stage.build(c.timeline, beads);
-  const seek = (t) => { stage.apply(stateAt(c.timeline, t)); stage.render(); };
+  const ov = document.getElementById('overlay');
+  ov.width = Math.round(rect.width); ov.height = Math.round(rect.height);
+  const ctx = ov.getContext('2d');
+  const seek = (t) => {
+    const f = stateAt(c.timeline, t);
+    stage.apply(f); stage.render();
+    drawOverlay(ctx, f, c.timeline, stage, { width: ov.width, height: ov.height, style: c.timeline.style });
+  };
   seek(0);
   window.__dev = { seek, timeline: c.timeline, stage };
 }

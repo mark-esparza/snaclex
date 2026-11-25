@@ -1,7 +1,15 @@
 /* SnaCleX Animation Studio — page chrome. The preview canvas has its own
    dark/light scene style; this file only lays out the surrounding page. */
 
-.studio-main { max-width: 1400px; margin: 0 auto; padding: 8px 12px 16px; }
+.studio-main {
+  /* body is a flex column; without an explicit width this shrinks to its content */
+  width: 100%; max-width: 1400px; margin: 0 auto; padding: 8px 12px 16px;
+  box-sizing: border-box; flex: 1 0 auto;
+}
+/* The studio uses the wide measure, like the workbench, not the narrow policy one. */
+.studio.subpage .topbar, .studio.subpage .sitenav, .studio.subpage .crumb {
+  padding-inline: max(14px, calc((100% - 1400px) / 2));
+}
 
 .studio-toolbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
