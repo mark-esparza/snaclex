@@ -35,5 +35,12 @@ jobs:
         # here catches a broken bundle on every push for free.
         run: for f in web/*.js; do node --check "$f"; done
 
+      - name: Syntax-check the Studio modules
+        run: find web/studio -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Run Studio unit tests
+        # Node's built-in runner; the Studio is plain ES modules with no deps.
+        run: node --test 'web/studio/test/*.test.js'
+
       - name: Run test suite
         run: python -m unittest discover -s tests -v

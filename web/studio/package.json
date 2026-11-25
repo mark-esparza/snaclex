@@ -1,0 +1,6 @@
+{
+  "name": "snaclex-studio",
+  "private": true,
+  "type": "module",
+  "description": "Marks the Studio's .js files as ES modules for Node's test runner. Not an npm package; nothing to install."
+}

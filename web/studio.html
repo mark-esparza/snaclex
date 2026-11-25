@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SnaCleX — Animation Studio</title>
+  <meta name="description" content="Write a scene script, preview it in 3D, and export an educational molecular animation as a video. Stylised; not to scale." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="studio.css" />
+</head>
+<body class="subpage studio">
+  <a class="skip-link" href="#maincontent">Skip to main content</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img" focusable="false">
+            <circle cx="20" cy="20" r="18.5" class="seal-ring" />
+            <circle cx="20" cy="20" r="15.5" class="seal-ring-thin" />
+            <path d="M20 9.2 L28.4 14.1 L28.4 23.9 L20 28.8 L11.6 23.9 L11.6 14.1 Z"
+                  class="seal-hex" />
+            <circle cx="20" cy="20" r="3.1" class="seal-core" />
+            <circle cx="20" cy="9.2" r="1.9" class="seal-node" />
+            <circle cx="28.4" cy="23.9" r="1.9" class="seal-node" />
+            <circle cx="11.6" cy="23.9" r="1.9" class="seal-node" />
+          </svg>
+        </span>
+      <div>
+        <h1>SnaCleX</h1>
+        <p class="tagline">Animation Studio</p>
+      </div>
+    </div>
+    <div class="research-badge">RESEARCH ONLY · not for clinical use</div>
+  </header>
+
+  <nav class="sitenav" aria-label="Site">
+    <a href="/">Workbench</a>
+    <a href="/studio.html" class="here">Studio</a>
+    <a href="/help.html">Help</a>
+    <a href="/api.html">API Reference</a>
+    <a href="https://www.rcsb.org/" rel="noopener noreferrer">RCSB PDB</a>
+    <a href="https://pubchem.ncbi.nlm.nih.gov/" rel="noopener noreferrer">PubChem</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="/terms.html">Terms</a>
+  </nav>
+
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="/">Home</a> <span aria-hidden="true">›</span> <span>Animation Studio</span>
+  </nav>
+
+  <main class="studio-main" id="maincontent">
+    <div class="studio-toolbar" role="toolbar" aria-label="Studio">
+      <label>Examples
+        <select id="examples">
+          <option value="">Choose…</option>
+          <option value="transcription-basic">Transcription (basic)</option>
+          <option value="nondisjunction-meiosis-1">Nondisjunction in Meiosis I</option>
+        </select>
+      </label>
+      <label class="file-btn">Open… <input id="open" type="file" accept=".txt,text/plain" /></label>
+      <button id="save" type="button">Save</button>
+      <label>Export
+        <select id="export" disabled>
+          <option value="">Checking…</option>
+        </select>
+      </label>
+      <button id="exportCancel" type="button" hidden>Cancel</button>
+      <progress id="exportProgress" max="1" value="0" hidden></progress>
+      <span id="exportStatus" role="status"></span>
+    </div>
+
+    <div class="studio-body">
+      <section class="studio-script" aria-label="Scene script">
+        <textarea id="editor" spellcheck="false" autocomplete="off"
+                  aria-label="Scene script"
+                  placeholder="Write a scene script. See Help → Studio for the format."></textarea>
+        <div id="diagnostics" aria-live="polite"></div>
+      </section>
+      <section class="studio-preview" aria-label="Preview">
+        <div id="preview">
+          <canvas id="gl"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
+        <div class="studio-timeline">
+          <button id="play" type="button" aria-label="Play">▶</button>
+          <input id="scrub" type="range" min="0" max="1" step="0.01" value="0" aria-label="Time" />
+          <span id="clock">0:00.0 / 0:00</span>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="studio/app.js"></script>
+</body>
+</html>

@@ -9,6 +9,11 @@ public APIs; it does not bundle or redistribute their databases.
 SOFTWARE (client-side, loaded at runtime)
 - 3Dmol.js — molecular visualization library. BSD-3-Clause License.
   Loaded in the browser from a CDN. (c) the 3Dmol.js authors.
+- three.js r170 (three@0.170.0), including the MarchingCubes add-on —
+  3D rendering for the Animation Studio. MIT License. (c) three.js authors.
+  Vendored in web/vendor/ (see web/vendor/LICENSES.txt).
+- webm-muxer 5.1.4 and mp4-muxer 5.2.2 — video container writers for Studio
+  export. MIT License. (c) Vanilagy. Vendored in web/vendor/.
 
 DATA RESOURCES (accessed at runtime via public APIs)
 - RCSB Protein Data Bank (rcsb.org) — structures & metadata.
