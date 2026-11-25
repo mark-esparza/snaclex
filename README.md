@@ -190,6 +190,45 @@ Until then the DRAFT flag rides along on every API response and panel result.
 These mirror a simplified PLIP-style approach so the tool runs with zero
 scientific dependencies. They are screening heuristics, not force-field energies.
 
+## Animation Studio
+
+`/studio.html` turns SnaCleX's structures into **educational animations**. You
+write a short plain-text scene script listing what is on screen (a DNA helix,
+proteins, chromosomes, cohesin rings, spindle fibres, cells) and what happens
+when (unwind, move, cleave, pull, divide, camera moves, captions). The page
+shows a live 3D preview with a timeline, and **exports a 720p or 1080p WebM or
+MP4 video** in the browser.
+
+```
+title "Nondisjunction in Meiosis I"
+note "Stylised; not to scale"
+actor dna = helix turns=30
+actor sep = protein from=7NJ1 chain=A label="separase"
+0-4s  sep enter from=left to=dna@0.45
+6s    caption "Separase is released" for=3s
+```
+
+- **Real protein shapes.** `protein from=<PDB ID> chain=<C>` fetches the chain
+  through `/api/analyze` and draws a smooth surface around its Cα trace (1 unit
+  = 1 nm). If it can't load, the actor keeps a generic shape and a warning is
+  shown.
+- **Deterministic.** Scene state is a pure function of time, so scrubbing,
+  playback and export always agree. Export renders frame by frame at 30 fps
+  with WebCodecs.
+- **Credits.** Every structure used is listed at the end of the video.
+- **Two worked examples** in the Examples menu: basic transcription (RNA
+  polymerase II, 1I6H) and meiosis I nondisjunction leading to trisomy 21
+  (cohesin 6WG3, separase–securin 7NJ1).
+
+Animations are stylised teaching aids, not simulations. The full script
+reference is on the help page. Three.js r170 and two small MIT-licensed video
+muxers are vendored in `web/vendor/`, so there is still no build step and no
+runtime CDN beyond 3Dmol.js. The Studio's pure modules have Node unit tests:
+
+```bash
+node --test 'web/studio/test/*.test.js'
+```
+
 ## Run
 
 ```bash
@@ -281,6 +320,11 @@ web/
   index.html style.css app.js
   help.html help.js      user guide, glossary, reference cases
   api.html api.js        rendered API contract
+  studio.html studio.css Animation Studio page
+  studio/                scene-script parser, schema, timeline, structures,
+                         export, render/ (Three.js views, overlay),
+                         examples/, test/ (Node unit tests)
+  vendor/                pinned Three.js r170 + webm/mp4 muxers (MIT)
   favicon.svg
 legacy/                previous StructInteract CLI (archived)
 ```

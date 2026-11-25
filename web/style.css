@@ -896,3 +896,11 @@ select:focus-visible, textarea:focus-visible, .ex:focus-visible,
   .research-badge { order: 3; }
   .tagline { white-space: normal; }
 }
+
+/* Code samples on the help page (Animation Studio scripts). */
+.policy pre.code-block {
+  font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  background: var(--soft); border: 1px solid var(--line);
+  padding: 8px 10px; overflow-x: auto; white-space: pre;
+}
+.policy h3 { margin: 18px 0 6px; font-size: 14px; }

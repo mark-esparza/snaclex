@@ -77,6 +77,30 @@ class TestStudioFiles(unittest.TestCase):
         for name in PAGES:
             self.assertIn('href="/studio.html"', _read(name), name)
 
+    def _schema_keys(self, table):
+        src = _read("studio", "schema.js")
+        block = re.search(r"export const %s = \{(.*?)\n\};" % table, src, re.S)
+        self.assertIsNotNone(block, f"{table} not found in schema.js")
+        return re.findall(r"^  ([a-z]+): \{", block.group(1), re.M)
+
+    def test_help_documents_every_verb(self):
+        html = _read("help.html")
+        verbs = self._schema_keys("VERBS")
+        self.assertGreater(len(verbs), 20)
+        for verb in verbs + self._schema_keys("CAMERA_VERBS"):
+            self.assertIn(f"<code>{verb}</code>", html, f"help does not document verb '{verb}'")
+
+    def test_help_documents_every_actor_type(self):
+        html = _read("help.html")
+        for kind in self._schema_keys("ACTOR_TYPES"):
+            self.assertIn(f"<code>{kind}</code>", html, f"help does not document actor type '{kind}'")
+
+    def test_help_has_a_studio_section(self):
+        html = _read("help.html")
+        self.assertIn('id="studio"', html)
+        self.assertIn('href="#studio"', html)
+        self.assertIn("not to scale", html.lower())
+
     def test_editor_starts_empty(self):
         html = _read("studio.html")
         m = re.search(r"<textarea[^>]*id=\"editor\"[^>]*>(.*?)</textarea>", html, re.S)

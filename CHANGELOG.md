@@ -5,6 +5,32 @@ All notable changes to SnaCleX are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added: Animation Studio
+A new page, `/studio.html`, for making educational molecular and cellular
+animations from a plain-text scene script, with live 3D preview, timeline
+scrubbing, and in-browser video export (720p/1080p, WebM/MP4).
+
+- **Scene-script language** (`web/studio/parse.js`, `schema.js`): headers,
+  actors (`helix`, `strand`, `protein`, `ring`, `chromosome`, `fibre`, `cell`,
+  `point`, `label`, `arrow`) and timed verbs, with errors and warnings reported
+  by line and "did you mean" suggestions.
+- **Deterministic timeline** (`timeline.js`): scene state is a pure function of
+  time; attachments, rings and fibre ends follow their targets every frame.
+- **Real structures**: protein actors can take their shape from a PDB chain via
+  `/api/analyze`, coarse-grained to Cα beads; failures fall back to a generic
+  shape with a warning.
+- **Rendering**: vendored Three.js r170 with a dark "glowing molecules" style
+  (or light), captions, labels, a "not to scale" note and automatic structure
+  credits.
+- **Export**: fixed-step frame rendering encoded with WebCodecs and muxed by
+  vendored `webm-muxer` / `mp4-muxer`.
+- **Examples**: basic transcription, and meiosis I nondisjunction leading to
+  trisomy 21.
+- Tests: Node unit tests for the pure modules (run in CI), static-serving and
+  documentation tests (`tests/test_studio_static.py`), and Playwright smoke
+  tests (`e2e/test_studio.py`). The server now serves `.txt` as `text/plain`,
+  and every page links to the Studio.
+
 ### Changed: the workbench ships bare
 What a researcher analyzes should not be nudged by the tool, so every
 suggestion has been removed from the workbench and moved to a help page where
