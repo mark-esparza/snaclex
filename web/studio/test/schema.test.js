@@ -149,3 +149,11 @@ test('every verb has a default duration and a target list', () => {
     assert.equal(typeof v.defaultDuration, 'number', name);
   }
 });
+
+test('strand along= must name a helix', () => {
+  const r = parse('actor p = protein\nactor s = strand along=p');
+  assert.equal(r.scene, null);
+  assert.equal(r.errors[0].line, 2);
+  assert.match(r.errors[0].message, /along= must name a helix/);
+  assert.deepEqual(parse('actor d = helix\nactor s = strand along=d').errors, []);
+});

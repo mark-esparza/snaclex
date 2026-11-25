@@ -266,7 +266,8 @@ initExport({
   setBusy(busy) {
     state.busy = busy;
     state.playing = false;
-    els.editor.disabled = busy;
+    // Nothing may replace the scene while it is being exported.
+    for (const el of [els.editor, els.examples, els.open]) el.disabled = busy;
     if (!busy) { resize(); state.needsRender = true; }
   },
 });

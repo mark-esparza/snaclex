@@ -148,6 +148,24 @@ class TestStudio(unittest.TestCase):
         self.assertEqual(errors, [], f"uncaught JS errors: {errors}")
         page.close()
 
+    def test_scene_cannot_change_during_export_and_cancel_works(self):
+        page, errors = self._open()
+        options = page.eval_on_selector_all("#export option", "os => os.map(o => o.value)")
+        if "webm:720p" not in options:
+            self.skipTest("this Chromium build cannot encode WebM")
+        self._load_example(page)
+        page.select_option("#export", "webm:720p")
+        expect(page.locator("#exportCancel")).to_be_visible(timeout=10000)
+        self.assertTrue(page.locator("#editor").is_disabled())
+        self.assertTrue(page.locator("#examples").is_disabled())
+        self.assertTrue(page.locator("#open").is_disabled())
+        page.click("#exportCancel")
+        expect(page.locator("#exportStatus")).to_contain_text("cancelled", timeout=15000)
+        self.assertFalse(page.locator("#examples").is_disabled())
+        self.assertFalse(page.locator("#editor").is_disabled())
+        self.assertEqual(errors, [], f"uncaught JS errors: {errors}")
+        page.close()
+
     def test_editor_starts_empty(self):
         page, errors = self._open()
         self.assertEqual(page.locator("#editor").input_value(), "")

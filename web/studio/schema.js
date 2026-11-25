@@ -320,6 +320,12 @@ export function validate(scene) {
     }
   };
   for (const a of byName.values()) for (const r of collectRefs(a.params)) checkRef(r, a.line);
+  for (const a of byName.values()) {
+    const along = a.type === 'strand' && a.params.along;
+    if (along && byName.has(along.ref) && byName.get(along.ref).type !== 'helix') {
+      errors.push({ line: a.line, message: `along= must name a helix ("${along.ref}" is a ${byName.get(along.ref).type})` });
+    }
+  }
 
   // Actions.
   for (const act of scene.actions) {

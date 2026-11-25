@@ -35,6 +35,12 @@ jobs:
         # here catches a broken bundle on every push for free.
         run: for f in web/*.js; do node --check "$f"; done
 
+      - name: Set up Node
+        # The Studio tests use `node --test` with a glob pattern (Node >= 21).
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Syntax-check the Studio modules
         run: find web/studio -name '*.js' -print0 | xargs -0 -n1 node --check
 
