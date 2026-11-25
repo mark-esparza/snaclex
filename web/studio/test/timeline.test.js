@@ -198,7 +198,7 @@ test('default camera frames the scene', () => {
   const t = tl('actor dna = helix turns=10\nactor p = protein at=0,10,0');
   const cam = stateAt(t, 0).camera;
   assert.equal(cam.fov, 35);
-  nearV(cam.target, [0, 5, 0]);
+  nearV(cam.target, [0, 5.3, 0]); // centre of the bounding box: helix ±2.4, protein 10 ± 3
   const d = Math.hypot(...cam.pos.map((v, i) => v - cam.target[i]));
   assert.ok(d > 40 && d < 200, `distance ${d}`);
   assert.ok(cam.pos[2] > cam.target[2], 'looks from +z');
@@ -232,4 +232,11 @@ test('stateAt does not mutate the timeline', () => {
   s.actors.p.pos[0] = 999;
   stateAt(t, 2);
   assert.equal(JSON.stringify(t), before);
+});
+
+test('wide framing fits a long helix to the 16:9 frame width', () => {
+  const t = tl('actor dna = helix turns=20');
+  const cam = stateAt(t, 0).camera;
+  const d = Math.hypot(...cam.pos.map((v, i) => v - cam.target[i]));
+  assert.ok(d > 55 && d < 80, `distance ${d}`);
 });

@@ -228,18 +228,37 @@ function findCycle(edges) {
   return found;
 }
 
+// Points that bound an actor's shape, for framing: a helix by its two ends,
+// a chromosome by its top and bottom, anything else by a sphere.
+function boundsSamples(decl, s) {
+  if (decl.type === 'helix' || decl.type === 'chromosome') {
+    const [a, b] = decl.type === 'helix' ? [{ u: 0 }, { u: 1 }] : [{ part: 'top' }, { part: 'bottom' }];
+    const pad = (decl.type === 'helix' ? 2.4 : 2.5) * s.scale;
+    return [anchorPoint(decl, s, { ref: '', ...a }), anchorPoint(decl, s, { ref: '', ...b })].map((p) => ({ p, pad }));
+  }
+  return [{ p: s.pos, pad: actorExtent(decl.type, decl.params, s.scale) }];
+}
+
+// Frame the visible actors: centre on their bounding box and back off along
+// the default viewing direction until the box fits the frame's width and
+// height (the frame is wider than tall, so long things can use the width).
 function wideFraming(tl, state) {
   let names = tl.order.filter((n) => state.actors[n].visible && state.actors[n].opacity > 0.01);
   if (!names.length) names = tl.order;
   if (!names.length) return { target: [0, 0, 0], pos: mul(WIDE_DIR, 50) };
-  const centroid = mul(names.reduce((acc, n) => add(acc, state.actors[n].pos), [0, 0, 0]), 1 / names.length);
-  let R = 1;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
   for (const n of names) {
-    const a = tl.actors[n];
-    R = Math.max(R, actorExtent(a.type, a.params, state.actors[n].scale) + len(sub(state.actors[n].pos, centroid)));
+    for (const { p, pad } of boundsSamples(tl.actors[n], state.actors[n])) {
+      for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], p[k] - pad); hi[k] = Math.max(hi[k], p[k] + pad); }
+    }
   }
-  const d = (R / Math.tan((FOV / 2) * (Math.PI / 180))) * 1.15;
-  return { target: centroid, pos: add(centroid, mul(WIDE_DIR, d)) };
+  const target = [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2);
+  const halfW = Math.max(1, (hi[0] - lo[0]) / 2), halfH = Math.max(1, (hi[1] - lo[1]) / 2);
+  const halfD = (hi[2] - lo[2]) / 2;
+  const tanV = Math.tan((FOV / 2) * (Math.PI / 180));
+  const aspect = tl.size[0] / tl.size[1];
+  const d = Math.max(halfH / tanV, halfW / (tanV * aspect)) * 1.12 + halfD;
+  return { target, pos: add(target, mul(WIDE_DIR, d)) };
 }
 
 export function compile(scene) {
