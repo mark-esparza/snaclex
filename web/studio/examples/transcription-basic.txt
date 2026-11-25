@@ -1,8 +1,48 @@
-# Draft example (replaced by the finished transcription script).
+# Transcription (basic) — an example scene for the SnaCleX Animation Studio.
+#
+# RNA polymerase II binds a gene's promoter, opens a short "bubble" in the
+# double helix, and moves along the DNA building an RNA copy, which peels away
+# behind it. Polymerase shape: yeast RNA polymerase II, PDB 1I6H (its two
+# largest subunits, chains A and B). Everything else is stylised.
+
 title "Transcription (basic)"
+style dark
 note "Stylised; not to scale"
-actor dna = helix turns=24
-actor pol = protein color=gold label="RNA polymerase"
-0-3s pol enter from=top to=dna@0.3
-3-5s dna unwind from=0.27 to=0.33
-3s caption "The polymerase opens the double helix"
+credits on
+
+# --- actors ---
+actor dna = helix turns=30 color=pink label="DNA"
+actor promoter = label text="promoter" on=dna@0.2
+actor pol = protein from=1I6H chain=A,B color=gold scale=0.45 label="RNA polymerase II"
+actor rna = strand length=40 color=blue rot=0,0,135 hidden=yes label="mRNA"
+
+# --- the gene and its promoter ---
+0s      caption "DNA: two strands wound into a double helix" for=4s
+2-5s    pol enter from=top to=dna@0.2
+4.5s    caption "RNA polymerase II binds the promoter, the start of a gene" for=4s
+5-7s    camera zoom pol distance=70
+
+# --- opening the bubble ---
+7-9s    dna unwind from=0.17 to=0.23
+9s      caption "It opens a short stretch of the helix: the transcription bubble" for=4s
+
+# --- elongation: the RNA grows as the polymerase moves ---
+9-9.5s  rna move to=pol
+9.5s    rna attach to=pol
+10-11s  rna show
+10-30s  rna grow to=1 ease=linear
+12-30s  pol move to=dna@0.75 ease=linear
+12-30s  dna unwind from=0.72 to=0.78 ease=linear
+12-30s  camera follow pol
+13.5s   caption "Reading one DNA strand as a template, it builds a complementary RNA strand" for=5s
+19.5s   caption "The bubble travels with the polymerase; the helix closes again behind it" for=5s
+25.5s   caption "The new RNA peels away from the DNA as it grows" for=4s
+
+# --- termination ---
+30s     rna detach
+30-32s  pol leave to=top
+30-33s  dna rewind
+30.5s   caption "At the end of the gene, the polymerase lets go and the DNA rewinds" for=4s
+33-36s  rna leave to=top
+34-37s  camera wide
+35s     caption "The messenger RNA (mRNA) goes on to be processed and translated into protein" for=4s

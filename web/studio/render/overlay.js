@@ -45,7 +45,7 @@ function palette(style) {
 // How far above an actor's centre its label sits: the radius across the
 // actor, not along it (a long helix is thin).
 function labelRadius(stage, name, decl, s) {
-  if (decl.type === 'helix') return 2.4 * s.scale;
+  if (decl.type === 'helix' || decl.type === 'label') return 2.4 * s.scale;
   if (decl.type === 'strand') return 1 * s.scale;
   return stage.viewRadius(name) ?? actorExtent(decl.type, decl.params, s.scale);
 }
@@ -55,34 +55,44 @@ function drawLabels(ctx, f, tl, stage, W, H, pal) {
   ctx.font = `600 ${size}px ${FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
+  const placed = [];
   for (const name of tl.order) {
     const decl = tl.actors[name];
     const s = f.actors[name];
     const text = decl.type === 'label' ? decl.params.text : decl.params.label;
     if (!text || !s || !s.visible || s.opacity < 0.05) continue;
-    const base = decl.type === 'fibre' || decl.type === 'arrow' ? s.ends.tip || s.ends.to : s.pos;
+    const base = ['fibre', 'arrow', 'strand'].includes(decl.type) && s.ends ? s.ends.tip || s.ends.to : s.pos;
     ctx.globalAlpha = Math.min(1, s.opacity);
-    if (decl.type === 'label') {
-      const at = stage.project(base);
-      if (!at) continue;
-      ctx.fillStyle = pal.text;
-      ctx.fillText(text, at[0], at[1]);
-      continue;
-    }
     const r = labelRadius(stage, name, decl, s);
+    const centre = stage.project(base);
     const edge = stage.project([base[0], base[1] + r, base[2]]);
     const at = stage.project([base[0], base[1] + r * 1.5 + 1, base[2]]);
-    if (!edge || !at) continue;
+    if (!centre || !edge || !at) continue;
+    // An actor out of shot gets no label (clamping would pin it to the edge).
+    if (centre[0] < 0 || centre[0] > W || centre[1] < 0 || centre[1] > H) continue;
     // Keep the label inside the frame even when its actor nearly fills it.
     at[1] = Math.max(at[1], size * 1.8);
     at[0] = Math.min(Math.max(at[0], size * 4), W - size * 4);
+    const w = ctx.measureText(text).width + size * 0.8;
+    // Nudge up past labels already drawn so neighbours never overprint.
+    for (let tries = 0; tries < 6; tries++) {
+      const box = [at[0] - w / 2, at[1] - size * 1.35, w, size * 1.35];
+      const hit = placed.find((b) => box[0] < b[0] + b[2] && b[0] < box[0] + box[2] && box[1] < b[1] + b[3] && b[1] < box[1] + box[3]);
+      if (!hit) break;
+      at[1] = hit[1] - 2;
+    }
+    if (at[1] - size * 1.35 < 0) {
+      // No room above: sit beside the actor instead.
+      at[1] = Math.max(edge[1], size * 1.8);
+      at[0] = Math.min(edge[0] + w * 0.75, W - w / 2);
+    }
+    placed.push([at[0] - w / 2, at[1] - size * 1.35, w, size * 1.35]);
     ctx.strokeStyle = pal.line;
     ctx.lineWidth = Math.max(1, H / 720);
     ctx.beginPath();
     ctx.moveTo(edge[0], edge[1]);
     ctx.lineTo(at[0], at[1] + 2);
     ctx.stroke();
-    const w = ctx.measureText(text).width + size * 0.8;
     ctx.fillStyle = pal.band;
     roundRect(ctx, at[0] - w / 2, at[1] - size * 1.35, w, size * 1.35, size * 0.3);
     ctx.fill();

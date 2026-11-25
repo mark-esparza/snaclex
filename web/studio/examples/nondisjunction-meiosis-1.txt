@@ -1,0 +1,97 @@
+# Nondisjunction in Meiosis I — an example scene for the SnaCleX Animation Studio.
+#
+# How an egg or sperm can end up with an extra copy of chromosome 21. Left
+# cell: normal meiosis I, homologs go to opposite poles. Right cell: both
+# chromosome 21 homologs go to the same pole (nondisjunction). Protein shapes:
+# human cohesin SMC1/SMC3 (PDB 6WG3, chains A,B), separase (7NJ1 chain A) and
+# securin (7NJ1 chain B). 6WG3 is mitotic cohesin, used here as a representative
+# shape: meiosis uses closely related subunits (e.g. REC8, SMC1β). Cells,
+# chromosomes, rings and fibres are stylised.
+
+title "Nondisjunction in Meiosis I"
+style dark
+note "Stylised; not to scale"
+credits on
+
+# --- left cell: normal meiosis I ---
+actor cell1  = cell radius=40 nucleus=no label="normal meiosis I"
+actor poleL  = point at=-30,0,0 show=yes
+actor poleR  = point at=30,0,0 show=yes
+actor chrM   = chromosome color=violet at=-14,10,0 label="chr 21 (from mother)"
+actor chrP   = chromosome color=orange at=14,-8,0 rot=0,180,0 label="chr 21 (from father)"
+actor armM   = ring around=chrM.top radius=2.2 color=teal
+actor armP   = ring around=chrP.top radius=2.2 color=teal
+actor cenM   = ring around=chrM radius=2.2 color=teal
+actor cohesin = protein from=6WG3 chain=A,B color=teal scale=0.3 at=-10,1,0 hidden=yes label="cohesin (SMC1/SMC3)"
+actor sep    = protein from=7NJ1 chain=A color=gold scale=0.3 at=10,4,0 hidden=yes label="separase"
+actor sec    = protein from=7NJ1 chain=B color=red scale=0.6 hidden=yes label="securin"
+actor fL     = fibre from=poleL to=chrM.kinetochore
+actor fR     = fibre from=poleR to=chrP.kinetochore
+
+# --- right cell: nondisjunction ---
+actor cell2  = cell radius=40 nucleus=no at=150,0,0 label="nondisjunction"
+actor poleL2 = point at=120,0,0 show=yes
+actor poleR2 = point at=180,0,0 show=yes
+actor chrM2  = chromosome color=violet at=148,0,0
+actor chrP2  = chromosome color=orange at=152,0,0
+actor fM2    = fibre from=poleL2 to=chrM2.kinetochore
+actor fP2    = fibre from=poleL2 to=chrP2.kinetochore
+
+# --- 1. the two copies of chromosome 21 pair up ---
+0s      caption "In meiosis I, each chromosome pairs with its partner (homolog)" for=4.5s
+0-3s    camera zoom cell1 distance=150
+1-4s    chrM move to=-2,0,0
+1-4s    chrP move to=2,0,0
+4-6s    camera zoom chrM distance=45
+5s      caption "Each homolog is two identical sister chromatids, held together by cohesin rings" for=5s
+
+# --- 2. cohesin ---
+6-7s    cohesin show
+10-11s  cohesin hide
+
+# --- 3. separase is released ---
+11-12.5s sep show
+11-11.5s sec move to=sep
+11.5s   sec attach to=sep
+11.5-12.5s sec show
+11.5s   caption "Separase, the enzyme that cuts cohesin, is held back by securin" for=4s
+15.5s   sec detach
+15.5-17s sec leave to=top
+15.5s   caption "At anaphase, securin is destroyed and separase is released" for=3.5s
+17-19s  sep move to=armM
+19-20s  armM cleave
+19-20s  armP cleave
+19s     caption "Separase cuts cohesin on the chromosome arms; cohesin at the centromere is protected" for=5s
+20-21s  armM hide
+20-21s  armP hide
+21-22.5s sep leave to=right
+
+# --- 4. normal segregation ---
+23-25s  camera zoom cell1 distance=110
+24-26s  fL grow
+24-26s  fR grow
+24s     caption "Spindle fibres from opposite poles attach to the two homologs" for=4s
+28-31s  fL pull chrM to=poleL
+28-31s  fR pull chrP to=poleR
+28s     caption "Normally, the homologs are pulled to opposite poles: one copy each" for=4.5s
+
+# --- 5. nondisjunction ---
+33s     camera cut cell2 distance=110
+33-35s  fM2 grow
+33-35s  fP2 grow
+33.5s   caption "In nondisjunction, both homologs end up attached to the same pole" for=4s
+37-40s  fM2 pull chrM2 to=120,4,0
+37-40s  fP2 pull chrP2 to=124,-4,0
+37.5s   caption "Errors can arise if the homologs lose their connection too early, or attach wrongly" for=5s
+
+# --- 6. the result ---
+42-45s  camera wide
+43-46s  cell1 pinch
+43-46s  cell2 pinch
+46-49s  cell1 split gap=30
+46-49s  cell2 split gap=30
+43s     caption "The cell divides" for=3s
+47s     caption "Right: one cell has two copies of chromosome 21, the other has none" for=5s
+52s     caption "After meiosis II, the egg or sperm from this cell carries two copies (n+1) or none (n−1)" for=6s
+58s     caption "If an n+1 egg or sperm joins a normal one (n), the embryo has three copies (2n+1): trisomy 21" for=6s
+64s     caption "Most cases of trisomy 21 trace back to meiosis I in the egg" for=4.5s
