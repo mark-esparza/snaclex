@@ -1,75 +1,283 @@
 // SnaCleX Animation Studio — page wiring.
 //
-// Temporary development hook (replaced by the full page in a later task):
-// /studio.html?dev=1 renders a fixed scene and exposes window.__dev.seek(t).
+// Script text -> parse -> fetch real structures -> compile -> Stage. Editing
+// re-runs that pipeline (debounced); if the new text has errors, the last good
+// scene keeps playing and the errors are listed by line. Playback, scrubbing
+// and export all go through stateAt(timeline, t), so every view of time t is
+// the same frame.
+
 import { parse } from './parse.js';
 import { compile, stateAt } from './timeline.js';
-import { Stage } from './render/stage.js';
 import { loadStructures } from './structures.js';
+import { Stage } from './render/stage.js';
 import { drawOverlay } from './render/overlay.js';
+import { initExport } from './export-ui.js';
 
-const DEV_SCENES = {
-  '1': `
-actor dna = helix turns=20
-actor p = protein at=0,25,0
-actor sep = protein from=7NJ1 chain=A at=-25,-20,0
-actor sec = protein from=7NJ1 chain=B at=0,-20,0
-0-3s p move to=dna@0.5
-3-5s dna unwind from=0.45 to=0.55
-5-7s camera zoom p distance=30
-8s camera cut sep distance=40
-`,
-  '2': `
-actor cell = cell radius=40
-actor c1 = chromosome color=violet at=0,0,0
-actor c2 = chromosome color=pink at=6,0,0
-actor coh = ring around=c1 radius=2.6
-actor pole = point at=-30,0,0 show=yes
-actor f = fibre from=pole to=c1.kinetochore
-0-1s f grow
-1-2s coh open
-2-3s coh cleave
-2-3s c2 separate
-3-5s cell pinch
-6-8s cell split
-`,
-  '4': `
-title "Overlay check"
-note "Stylised; not to scale"
-actor sep = protein from=7NJ1 chain=A label="separase"
-actor dna = helix turns=10 at=0,-14,0 label="DNA"
-0-3s caption "Securin is degraded, so separase is released and can cut cohesin along the chromosome arms"
-`,
-  '3': `
-actor c1 = chromosome color=violet
-actor coh = ring around=c1.top radius=2.6
-actor dna = helix turns=6 at=0,-14,0
-actor coh2 = ring around=dna@0.5
-0s camera zoom c1 distance=34
-1-2s coh open
-1-2s coh2 open
-3-4s coh cleave
-3-4s c1 separate
-`,
+const $ = (id) => document.getElementById(id);
+const els = {
+  editor: $('editor'), diagnostics: $('diagnostics'), preview: $('preview'),
+  gl: $('gl'), overlay: $('overlay'), play: $('play'), scrub: $('scrub'),
+  clock: $('clock'), examples: $('examples'), open: $('open'), save: $('save'),
 };
 
-if (new URLSearchParams(location.search).has('dev')) {
-  const r = parse(DEV_SCENES[new URLSearchParams(location.search).get('dev')] || DEV_SCENES['1']);
-  const c = compile(r.scene);
-  const canvas = document.getElementById('gl');
-  const stage = new Stage(canvas, { style: c.timeline.style });
-  const rect = canvas.getBoundingClientRect();
-  stage.setSize(Math.round(rect.width), Math.round(rect.height), Math.min(2, devicePixelRatio));
-  const { beads } = await loadStructures(r.scene);
-  stage.build(c.timeline, beads);
-  const ov = document.getElementById('overlay');
-  ov.width = Math.round(rect.width); ov.height = Math.round(rect.height);
-  const ctx = ov.getContext('2d');
-  const seek = (t) => {
-    const f = stateAt(c.timeline, t);
-    stage.apply(f); stage.render();
-    drawOverlay(ctx, f, c.timeline, stage, { width: ov.width, height: ov.height, style: c.timeline.style });
+const EXAMPLES_DIR = 'studio/examples/';
+const DEBOUNCE_MS = 300;
+
+const state = {
+  tl: null,
+  beads: new Map(),
+  t: 0,
+  playing: false,
+  dirty: false,         // editor changed since last load/save
+  version: 0,           // bumps on every edit; stale async rebuilds are dropped
+  builtVersion: -1,     // version of the text the current diagnostics describe
+  needsRender: true,
+  css: { w: 0, h: 0 },
+  busy: false,          // true while exporting: editing and playback paused
+};
+
+const stage = new Stage(els.gl, { style: 'dark' });
+const octx = els.overlay.getContext('2d');
+
+// ---------------------------------------------------------------------------
+// Sizing and rendering
+
+function resize() {
+  if (state.busy) return;
+  const r = els.preview.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  state.css = { w, h };
+  stage.setSize(w, h, dpr);
+  els.overlay.width = Math.round(w * dpr);
+  els.overlay.height = Math.round(h * dpr);
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  state.needsRender = true;
+}
+
+export function renderAt(t) {
+  if (!state.tl) {
+    octx.clearRect(0, 0, state.css.w, state.css.h);
+    stage.render();
+    return;
+  }
+  const f = stateAt(state.tl, t);
+  stage.apply(f);
+  stage.render();
+  drawOverlay(octx, f, state.tl, stage, { width: state.css.w, height: state.css.h, style: state.tl.style });
+}
+
+const fmtClock = (t, decimals) => {
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  return `${m}:${decimals ? s.toFixed(1).padStart(4, '0') : String(Math.floor(s)).padStart(2, '0')}`;
+};
+
+function updateClock() {
+  const d = state.tl ? state.tl.duration : 0;
+  els.clock.textContent = `${fmtClock(state.t, true)} / ${fmtClock(d, false)}`;
+  els.scrub.max = String(d || 1);
+  els.scrub.value = String(state.t);
+  els.play.textContent = state.playing ? '❚❚' : '▶';
+  els.play.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
+}
+
+let lastFrame = performance.now();
+function tick(now) {
+  const dt = Math.min(0.1, (now - lastFrame) / 1000);
+  lastFrame = now;
+  if (state.playing && state.tl && !state.busy) {
+    state.t += dt;
+    if (state.t >= state.tl.duration) { state.t = state.tl.duration; state.playing = false; }
+    state.needsRender = true;
+  }
+  if (state.needsRender && !state.busy) {
+    state.needsRender = false;
+    renderAt(state.t);
+    updateClock();
+  }
+  requestAnimationFrame(tick);
+}
+
+function seek(t) {
+  state.t = Math.min(Math.max(0, t), state.tl ? state.tl.duration : 0);
+  state.needsRender = true;
+  updateClock();
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+
+function lineRange(text, line) {
+  const lines = text.split('\n');
+  let start = 0;
+  for (let i = 0; i < Math.min(line - 1, lines.length - 1); i++) start += lines[i].length + 1;
+  return [start, start + (lines[line - 1] || '').length];
+}
+
+function showDiagnostics(errors, warnings) {
+  els.diagnostics.replaceChildren();
+  const add = (d, cls) => {
+    const el = document.createElement('span');
+    el.className = cls;
+    el.textContent = `Line ${d.line}: ${d.message}`;
+    el.addEventListener('click', () => {
+      const [a, b] = lineRange(els.editor.value, d.line);
+      els.editor.focus();
+      els.editor.setSelectionRange(a, b);
+    });
+    els.diagnostics.appendChild(el);
   };
-  seek(0);
-  window.__dev = { seek, timeline: c.timeline, stage };
+  errors.forEach((d) => add(d, 'err'));
+  warnings.forEach((d) => add(d, 'warn'));
+}
+
+// ---------------------------------------------------------------------------
+// Rebuilding the scene from the script
+
+async function rebuild() {
+  const version = ++state.version;
+  const text = els.editor.value;
+  const p = parse(text);
+  if (p.errors.length) {
+    showDiagnostics(p.errors, p.warnings);
+    state.builtVersion = version;
+    return;
+  }
+  if (!p.scene.actors.length && !p.scene.actions.length) {
+    showDiagnostics([], []);
+    state.builtVersion = version;
+    return;
+  }
+  const { beads, warnings: structWarnings } = await loadStructures(p.scene);
+  if (version !== state.version) return; // a newer edit superseded this one
+  // A real structure knows its own size; framing and labels should use it.
+  for (const a of p.scene.actors) {
+    const b = beads.get(a.name);
+    if (a.type === 'protein' && b) a.params.size = 2 * b.radius;
+  }
+  const c = compile(p.scene);
+  if (c.errors.length) {
+    showDiagnostics(c.errors, [...p.warnings, ...structWarnings, ...c.warnings]);
+    state.builtVersion = version;
+    return;
+  }
+  state.tl = c.timeline;
+  state.beads = beads;
+  stage.build(state.tl, beads);
+  els.preview.style.background = state.tl.style === 'light' ? '#f4f1ea' : '#05060a';
+  state.t = Math.min(state.t, state.tl.duration);
+  showDiagnostics([], [...p.warnings, ...structWarnings, ...c.warnings].sort((a, b) => a.line - b.line));
+  state.builtVersion = version;
+  state.needsRender = true;
+  updateClock();
+}
+
+let debounce = null;
+function scheduleRebuild(delay = DEBOUNCE_MS) {
+  clearTimeout(debounce);
+  state.version++; // anything in flight is now stale
+  debounce = setTimeout(rebuild, delay);
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar: examples, open, save
+
+function slug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'scene';
+}
+
+function setScript(text) {
+  els.editor.value = text;
+  state.dirty = false;
+  state.t = 0;
+  state.playing = false;
+  scheduleRebuild(0);
+}
+
+els.editor.addEventListener('input', () => { state.dirty = true; scheduleRebuild(); });
+
+els.examples.addEventListener('change', async () => {
+  const name = els.examples.value;
+  if (!name) return;
+  if (state.dirty && els.editor.value.trim() && !window.confirm('Replace your unsaved script with this example?')) {
+    els.examples.value = '';
+    return;
+  }
+  try {
+    const res = await fetch(`${EXAMPLES_DIR}${name}.txt`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    setScript(await res.text());
+  } catch (e) {
+    showDiagnostics([{ line: 1, message: `could not load the example (${e.message})` }], []);
+  }
+  els.examples.value = '';
+});
+
+els.open.addEventListener('change', async () => {
+  const file = els.open.files && els.open.files[0];
+  if (!file) return;
+  setScript(await file.text());
+  els.open.value = '';
+});
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+els.save.addEventListener('click', () => {
+  const title = state.tl ? state.tl.title : '';
+  download(new Blob([els.editor.value], { type: 'text/plain' }), `${slug(title)}.txt`);
+  state.dirty = false;
+});
+
+// ---------------------------------------------------------------------------
+// Playback controls
+
+els.play.addEventListener('click', () => {
+  if (!state.tl) return;
+  if (!state.playing && state.t >= state.tl.duration - 1e-6) state.t = 0;
+  state.playing = !state.playing;
+  lastFrame = performance.now();
+  updateClock();
+});
+els.scrub.addEventListener('input', () => {
+  state.playing = false;
+  seek(parseFloat(els.scrub.value));
+});
+
+// ---------------------------------------------------------------------------
+// Start
+
+new ResizeObserver(resize).observe(els.preview);
+resize();
+updateClock();
+requestAnimationFrame(tick);
+
+initExport({
+  stage, state, slug, download, renderAt,
+  setBusy(busy) {
+    state.busy = busy;
+    state.playing = false;
+    els.editor.disabled = busy;
+    if (!busy) { resize(); state.needsRender = true; }
+  },
+});
+
+if (new URLSearchParams(location.search).has('test')) {
+  window.__studio = {
+    getTimeline: () => (state.tl ? { order: [...state.tl.order], duration: state.tl.duration } : null),
+    seek: (t) => { state.playing = false; seek(t); renderAt(state.t); },
+    isPlaying: () => state.playing,
+    time: () => state.t,
+    ready: () => state.builtVersion === state.version && !!state.tl,
+    structureCount: () => [...state.beads.values()].filter(Boolean).length,
+  };
 }

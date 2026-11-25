@@ -1,2 +1,8 @@
-# Placeholder — replaced by the real example script.
+# Draft example (replaced by the finished transcription script).
 title "Transcription (basic)"
+note "Stylised; not to scale"
+actor dna = helix turns=24
+actor pol = protein color=gold label="RNA polymerase"
+0-3s pol enter from=top to=dna@0.3
+3-5s dna unwind from=0.27 to=0.33
+3s caption "The polymerase opens the double helix"
